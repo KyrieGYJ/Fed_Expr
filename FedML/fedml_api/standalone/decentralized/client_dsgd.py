@@ -63,8 +63,10 @@ class ClientDSGD(object):
         outputs = self.model(train_x)
         # print(train_y)
         loss = self.criterion(outputs, train_y)
+        # 梯度
         grads_z = torch.autograd.grad(loss, self.model.parameters())
 
+        # 根据梯度更新参数
         for x_paras, g_z in zip(list(self.model_x.parameters()), grads_z):
             temp = g_z.data.mul(0 - self.learning_rate)
             x_paras.data.add_(temp)
@@ -89,7 +91,8 @@ class ClientDSGD(object):
         # update x_{t+1/2}
         for x_paras in self.model_x.parameters():
             x_paras.data.mul_(self.topology[self.id])
-
+        
+        # 按权重聚合周围的模型参数
         for client_id in self.neighbors_weight_dict.keys():
             model_x = self.neighbors_weight_dict[client_id]
             topo_weight = self.neighbors_topo_weight_dict[client_id]
