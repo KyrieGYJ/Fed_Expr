@@ -23,7 +23,7 @@ def cal_regret(client_list, client_number, t):
 
 
 # 主训练方法
-def FedML_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args):
+def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args):
     # 读参数
     iteration_number_T = args.iteration_number
     lr_rate = args.learning_rate

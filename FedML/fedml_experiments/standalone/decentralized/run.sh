@@ -10,8 +10,9 @@ N=$6
 NHB_NUM_U=$7
 NHB_NUM_D=$8
 B_SYMMETRIC=$9
+MAIN=${10}
 
-python3 main_dol.py \
+python3 $MAIN.py \
 --root_path $ROOT \
 --run_id $RUN_ID \
 --group_id $GROUP_ID \
