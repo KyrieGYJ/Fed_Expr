@@ -9,6 +9,7 @@ import torch
 from FedML.fedml_api.standalone.decentralized.client_dsgd import ClientDSGD
 from FedML.fedml_api.standalone.decentralized.client_pushsum import ClientPushsum
 from FedML.fedml_api.standalone.decentralized.topology_manager import TopologyManager
+from MyExpr.client_test import ClientTEST
 
 
 def cal_regret(client_list, client_number, t):
@@ -62,12 +63,12 @@ def FedML_decentralized_fl(client_number, client_id_list, streaming_data, model,
 
         elif args.mode == 'DOL':
 
-            client = ClientDSGD(model, model_cache, client_id, client_data, topology_manager,
+            client = ClientTEST(model, model_cache, client_id, client_data, topology_manager,
                                 iteration_number_T, learning_rate=lr_rate, batch_size=batch_size,
                                 weight_decay=weight_decay, latency=latency, b_symmetric=b_symmetric)
 
         else:
-            client = ClientDSGD(model, model_cache, client_id, client_data, topology_manager,
+            client = ClientTEST(model, model_cache, client_id, client_data, topology_manager,
                                 iteration_number_T, learning_rate=lr_rate, batch_size=batch_size,
                                 weight_decay=weight_decay, latency=latency, b_symmetric=b_symmetric)
 
@@ -83,27 +84,21 @@ def FedML_decentralized_fl(client_number, client_id_list, streaming_data, model,
         # todo 读论文看一下这一块算法
         if args.mode == 'DOL' or args.mode == 'PUSHSUM':
             for client in client_list:
-
-                # line 4: Locally computes the intermedia variable
-                client.train(t)
-
                 # todo 插入广播策略（在随机广播的基础上）
-                # line 5: send to neighbors
+                # 修改顺序：在训练前就把模型发送出去，以便联合更新
                 client.send_local_gradient_to_neighbor(client_list)
-
-
-
 
             # line 6: update
             for client in client_list:
-                # todo 用top方法选出有效的k个邻居 插入根据loss，f1，取top k个有效模型
+                #  用topK方法选出有效的k个邻居
+                #  根据loss
+                #  todo 根据f1
                 top_k = top_k_by_loss(client, client_list, t)
+                #  计算自己的loss，不更新参数
+                loss, outputs = client.cal_loss(t)
+                # 把联合更新策略升级为深度互学习
+                client.mutual_update(loss, outputs, top_k)
 
-                # todo 把联合更新策略升级为深度互学习
-                update_local_parameters_by_mutual_learning(client, top_k)
-
-                # 边权重聚合模型，貌似这样就是模型插值吧
-                client.update_local_parameters()
         else:
             for client in client_list:
                 client.train_local(t)
@@ -126,9 +121,10 @@ def top_k_by_loss(client, client_list, t):
     for index in range(len(client.topology)):
         if client.topology[index] != 0 and index != client.id:
             neighbor = client_list[index]
-            loss = neighbor.criterion(neighbor.model(train_x), train_y)
-            heap.append([index, loss])
+            out = neighbor.model(train_x)
+            loss = neighbor.criterion(out, train_y)
+            heap.append([index, loss, out])
     top_k = heapq.nlargest(math.floor(len(heap)*0.8), heap, lambda x : x[1])
     return top_k
 
-def update_local_parameters_by_mutual_learning(client, top_k):
+

@@ -1,9 +1,11 @@
 import random
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
-class ClientDSGD(object):
+class ClientTEST(object):
     def __init__(self, model, model_cache, client_id, streaming_data, topology_manager, iteration_number,
                  learning_rate, batch_size, weight_decay, latency, b_symmetric):
         # logging.info("streaming_data = %s" % streaming_data)
@@ -16,7 +18,6 @@ class ClientDSGD(object):
         self.topology_manager = topology_manager
         self.id = client_id  # integer
         self.streaming_data = streaming_data
-
 
         if self.b_symmetric:
             self.topology = topology_manager.get_symmetric_neighbor_list(client_id)
@@ -76,6 +77,36 @@ class ClientDSGD(object):
 
         self.loss_in_each_iteration.append(loss)
 
+    def cal_loss(self, iteration_id):
+        self.optimizer.zero_grad()
+
+        if iteration_id >= self.iteration_number:
+            iteration_id = iteration_id % self.iteration_number
+
+        train_x = torch.from_numpy(self.streaming_data[iteration_id]['x']).float()
+        # print(train_x)
+        train_y = torch.FloatTensor([self.streaming_data[iteration_id]['y']])
+        outputs = self.model(train_x)
+        # print(train_y)
+        loss = self.criterion(outputs, train_y)
+        return loss, outputs
+
+    def mutual_update(self, loss, outputs, top_k):
+        criterion_KLD = nn.KLDivLoss(reduction='batchmean')
+        # 聚合top_k的总KL散度
+        KL_loss = 0
+        for index, _, out in enumerate(top_k):
+            KL_loss += criterion_KLD(F.softmax(outputs), F.softmax(out)).item()
+        loss += KL_loss / (len(top_k))
+
+        grads_z = torch.autograd.grad(loss, self.model.parameters())
+
+        for x_paras, g_z in zip(list(self.model_x.parameters()), grads_z):
+            temp = g_z.data.mul(0 - self.learning_rate)
+            x_paras.data.add_(temp)
+
+        self.loss_in_each_iteration.append(loss)
+
     def get_regret(self):
         return self.loss_in_each_iteration
 
@@ -92,10 +123,9 @@ class ClientDSGD(object):
 
     def update_local_parameters(self):
         # update x_{t+1/2}
-        # 聚合前先将自己的参数乘上自己在图中的权重
         for x_paras in self.model_x.parameters():
             x_paras.data.mul_(self.topology[self.id])
-        
+
         # 按权重聚合周围的模型参数
         for client_id in self.neighbors_weight_dict.keys():
             model_x = self.neighbors_weight_dict[client_id]
@@ -107,12 +137,3 @@ class ClientDSGD(object):
         # update parameter z (self.model)
         for x_params, z_params in zip(list(self.model_x.parameters()), list(self.model.parameters())):
             z_params.data.copy_(x_params)
-
-
-# import torch.nn.functional as F
-
-# if __name__ == '__main__':
-#     vector = torch.rand(3,4,2)
-#     print(vector)
-#     # print(vector[0])
-#     print(F.softmax(vector[0], dim=0).sum(dim=0))
