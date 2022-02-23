@@ -5,7 +5,12 @@ __pycache__/
 
 # C extensions
 *.so
-./FedML/data/*
+
+# dataset
+FedML/data/*/datasets
+
+# idea
+.idea/*
 
 # Distribution / packaging
 .Python
