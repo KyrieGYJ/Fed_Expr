@@ -8,6 +8,10 @@ __pycache__/
 
 # dataset
 FedML/data/*/datasets
+FedML/data/*.tar.gz
+FedML/data/*
+# script
+FedML/CI-install.sh
 
 # idea
 .idea/*
