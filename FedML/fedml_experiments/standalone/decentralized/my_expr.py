@@ -51,8 +51,9 @@ def main():
                "-td" + str(args.topology_neighbors_num_directed) + \
                "-lr" + str(args.learning_rate),
 
-    wandb.init(project="fedml",
+    wandb.init(project="my-test-project",
                name=str(RUN_NAME),
+                entity="kyriegyj",
                config=args)
 
     logging.basicConfig(level=logging.INFO,
