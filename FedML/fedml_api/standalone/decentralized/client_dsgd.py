@@ -76,7 +76,7 @@ class ClientDSGD(object):
             temp = g_z.data.mul(0 - self.learning_rate)
             x_paras.data.add_(temp)
 
-        pred = torch.argmax(outputs, 1)
+        pred = torch.argmax(outputs, 0)
         self.record.append(((pred == train_y).sum().item(), len(train_y)))
         self.loss_in_each_iteration.append(loss.detach().numpy())
 
