@@ -11,7 +11,7 @@ from fedml_api.standalone.decentralized.topology_manager import TopologyManager
 def cal_regret(client_list, client_number, t):
     regret = 0
     for client in client_list:
-        regret += np.sum(client.get_regret()).detach().numpy()
+        regret += np.sum(client.get_regret())
 
     regret = regret / (client_number * (t + 1))
     return regret

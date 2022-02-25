@@ -105,7 +105,7 @@ class ClientTEST(object):
             temp = g_z.data.mul(0 - self.learning_rate)
             x_paras.data.add_(temp)
 
-        self.loss_in_each_iteration.append(loss)
+        self.loss_in_each_iteration.append(loss.detach().numpy())
 
     def get_regret(self):
         return self.loss_in_each_iteration
