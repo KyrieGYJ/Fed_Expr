@@ -18,6 +18,7 @@ class ClientDSGD(object):
         self.streaming_data = streaming_data
 
 
+
         if self.b_symmetric:
             self.topology = topology_manager.get_symmetric_neighbor_list(client_id)
         else:
@@ -34,6 +35,7 @@ class ClientDSGD(object):
 
         self.batch_size = batch_size
         self.loss_in_each_iteration = []
+        self.record = []
 
         # the default weight of the model is z_t, while the x weight is another weight used as temporary value
         self.model_x = model_cache
@@ -74,10 +76,15 @@ class ClientDSGD(object):
             temp = g_z.data.mul(0 - self.learning_rate)
             x_paras.data.add_(temp)
 
+        pred = torch.argmax(outputs, 1)
+        self.record.append(((pred == train_y).sum().item(), len(train_y)))
         self.loss_in_each_iteration.append(loss.detach().numpy())
 
     def get_regret(self):
         return self.loss_in_each_iteration
+
+    def get_record(self):
+        return self.record
 
     # simulation
     def send_local_gradient_to_neighbor(self, client_list):

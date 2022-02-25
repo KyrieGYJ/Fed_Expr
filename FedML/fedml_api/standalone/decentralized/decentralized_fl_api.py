@@ -8,6 +8,8 @@ from fedml_api.standalone.decentralized.client_pushsum import ClientPushsum
 from fedml_api.standalone.decentralized.topology_manager import TopologyManager
 
 
+# 每次选的数据不同，可能有震荡
+# Average Loss (global)
 def cal_regret(client_list, client_number, t):
     regret = 0
     for client in client_list:
@@ -15,6 +17,26 @@ def cal_regret(client_list, client_number, t):
 
     regret = regret / (client_number * (t + 1))
     return regret
+
+
+# Average Loss (single round)
+def cal_loss(client_list, client_number, t):
+    loss = 0
+    for client in client_list:
+        loss += client.get_regret[t]
+
+    loss = loss / client_number
+    return loss
+
+
+def cal_acc(client_list, t):
+    correct = 0
+    total = 0
+    for client in client_list:
+        record = client.get_record()
+        correct += record[t][0]
+        total += record[t][0]
+    return correct / total
 
 
 def FedML_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args):
@@ -91,8 +113,11 @@ def FedML_decentralized_fl(client_number, client_id_list, streaming_data, model,
 
         regret = cal_regret(client_list, client_number, t)
         # print("regret = %s" % regret)
+        loss = cal_loss(client_list, client_number, t)
+        acc = cal_acc(client_list, t)
 
-        wandb.log({"Average Loss": regret, "iteration": t})
+        # todo acc，f1指标
+        wandb.log({"Average Loss": regret, "loss": loss, "acc": acc, "iteration": t})
 
         f_log.write("%f,%f\n" % (t, regret))
 

@@ -87,7 +87,7 @@ class ClientTEST(object):
         # print(train_x)
         train_y = torch.FloatTensor([self.streaming_data[iteration_id]['y']])
         outputs = self.model(train_x)
-        # print(train_y)
+        print(train_y)
         loss = self.criterion(outputs, train_y)
         return loss, outputs
 
