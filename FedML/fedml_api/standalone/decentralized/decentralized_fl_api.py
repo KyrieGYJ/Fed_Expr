@@ -29,13 +29,15 @@ def cal_loss(client_list, client_number, t):
     return loss
 
 
+# acc
 def cal_acc(client_list, t):
     correct = 0
     total = 0
     for client in client_list:
         record = client.get_record()
         correct += record[t][0]
-        total += record[t][0]
+        total += record[t][1]
+
     return correct / total
 
 
