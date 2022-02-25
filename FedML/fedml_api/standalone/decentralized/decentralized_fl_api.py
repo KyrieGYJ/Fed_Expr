@@ -23,7 +23,7 @@ def cal_regret(client_list, client_number, t):
 def cal_loss(client_list, client_number, t):
     loss = 0
     for client in client_list:
-        loss += client.get_regret[t]
+        loss += client.get_regret()[t]
 
     loss = loss / client_number
     return loss
