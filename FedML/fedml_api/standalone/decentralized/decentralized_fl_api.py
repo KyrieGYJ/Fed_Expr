@@ -118,7 +118,7 @@ def FedML_decentralized_fl(client_number, client_id_list, streaming_data, model,
         loss = cal_loss(client_list, client_number, t)
         acc = cal_acc(client_list, t)
 
-        # todo acc，f1指标
+        # todo f1指标
         wandb.log({"Average Loss": regret, "loss": loss, "acc": acc, "iteration": t})
 
         f_log.write("%f,%f\n" % (t, regret))

@@ -21,6 +21,27 @@ def cal_regret(client_list, client_number, t):
     regret = regret / (client_number * (t + 1))
     return regret
 
+# Average Loss (single round)
+def cal_loss(client_list, client_number, t):
+    loss = 0
+    for client in client_list:
+        loss += client.get_regret()[t]
+
+    loss = loss / client_number
+    return loss
+
+
+# acc
+def cal_acc(client_list, t):
+    correct = 0
+    total = 0
+    for client in client_list:
+        record = client.get_record()
+        correct += record[t][0]
+        total += record[t][1]
+
+    return correct / total
+
 
 # 主训练方法
 def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args):
@@ -50,6 +71,7 @@ def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model
 
     # create all client instances (each client will create an independent model instance)
     client_list = []
+
     for client_id in client_id_list:
         client_data = streaming_data[client_id]
         # print("len = " + str(len(client_data)))
@@ -105,8 +127,11 @@ def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model
 
         regret = cal_regret(client_list, client_number, t)
         # print("regret = %s" % regret)
+        loss = cal_loss(client_list, client_number, t)
+        acc = cal_acc(client_list, t)
 
-        wandb.log({"Average Loss": regret, "iteration": t})
+        # todo f1指标
+        wandb.log({"Average Loss": regret, "loss": loss, "acc": acc, "iteration": t})
 
         f_log.write("%f,%f\n" % (t, regret))
 

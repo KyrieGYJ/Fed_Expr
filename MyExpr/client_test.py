@@ -35,6 +35,7 @@ class ClientTEST(object):
 
         self.batch_size = batch_size
         self.loss_in_each_iteration = []
+        self.record = []
 
         # the default weight of the model is z_t, while the x weight is another weight used as temporary value
         self.model_x = model_cache
@@ -84,11 +85,12 @@ class ClientTEST(object):
             iteration_id = iteration_id % self.iteration_number
 
         train_x = torch.from_numpy(self.streaming_data[iteration_id]['x']).float()
-        # print(train_x)
         train_y = torch.FloatTensor([self.streaming_data[iteration_id]['y']])
         outputs = self.model(train_x)
         print(train_y)
         loss = self.criterion(outputs, train_y)
+        pred = torch.argmax(outputs, 0)
+        self.record.append(((pred == train_y).sum().item(), len(train_y)))
         return loss, outputs
 
     def mutual_update(self, loss, outputs, top_k):
@@ -109,6 +111,9 @@ class ClientTEST(object):
 
     def get_regret(self):
         return self.loss_in_each_iteration
+
+    def get_record(self):
+        return self.record
 
     # simulation
     def send_local_gradient_to_neighbor(self, client_list):

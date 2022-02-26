@@ -65,7 +65,7 @@ class ClientDSGD(object):
         # print(train_x)
         train_y = torch.FloatTensor([self.streaming_data[iteration_id]['y']])
         outputs = self.model(train_x)
-        # print(train_y)
+        print("train_y=", train_y, "outputs=", outputs)
         loss = self.criterion(outputs, train_y)
 
         # 梯度
