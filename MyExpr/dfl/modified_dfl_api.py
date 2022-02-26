@@ -6,10 +6,9 @@ import numpy as np
 import wandb
 import torch
 
-from FedML.fedml_api.standalone.decentralized.client_dsgd import ClientDSGD
 from FedML.fedml_api.standalone.decentralized.client_pushsum import ClientPushsum
 from FedML.fedml_api.standalone.decentralized.topology_manager import TopologyManager
-from MyExpr.client_test import ClientTEST
+from MyExpr.dfl.client_test import ClientTEST
 
 
 def cal_regret(client_list, client_number, t):

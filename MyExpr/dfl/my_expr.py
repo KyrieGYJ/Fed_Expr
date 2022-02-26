@@ -8,11 +8,12 @@ import numpy as np
 import torch
 import wandb
 
-from MyExpr.modified_dfl_api import MyExpr_decentralized_fl
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../FedML")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../")))
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../")))
+from dfl.modified_dfl_api import MyExpr_decentralized_fl
 from fedml_api.model.linear.lr import LogisticRegression
-from fedml_api.standalone.decentralized.decentralized_fl_api import FedML_decentralized_fl
 from fedml_api.data_preprocessing.UCI.data_loader_for_susy_and_ro import DataLoader
 
 parser = argparse.ArgumentParser("cifar")

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 
+
 ROOT=$1
 RUN_ID=$2
 GROUP_ID=$3
@@ -10,9 +11,8 @@ N=$6
 NHB_NUM_U=$7
 NHB_NUM_D=$8
 B_SYMMETRIC=$9
-MAIN=${10}
 
-python3 $MAIN.py \
+python3 main_dol.py \
 --root_path $ROOT \
 --run_id $RUN_ID \
 --group_id $GROUP_ID \
@@ -22,8 +22,7 @@ python3 $MAIN.py \
 --topology_neighbors_num_undirected $NHB_NUM_U \
 --topology_neighbors_num_directed $NHB_NUM_D \
 --b_symmetric $B_SYMMETRIC \
---data_name "SUSY" \
---beta 0 \
---iteration_number 2000 \
---epoch 1 \
---time_varying 1
+--data_name "RO" \
+--beta 0.5 \
+--iteration_number 1000 \
+--epoch 2
