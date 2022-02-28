@@ -10,6 +10,8 @@ __pycache__/
 FedML/data/*/datasets
 FedML/data/*.tar.gz
 FedML/data/*
+MyExpr/data/*
+
 # script
 FedML/CI-install.sh
 

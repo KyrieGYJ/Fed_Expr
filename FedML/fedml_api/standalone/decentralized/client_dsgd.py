@@ -61,7 +61,7 @@ class ClientDSGD(object):
             iteration_id = iteration_id % self.iteration_number
 
         train_x = torch.from_numpy(self.streaming_data[iteration_id]['x']).float()
-        # todo 看下这里面的数据，是不是batch
+
         # print(train_x)
         train_y = torch.FloatTensor([self.streaming_data[iteration_id]['y']])
         outputs = self.model(train_x)

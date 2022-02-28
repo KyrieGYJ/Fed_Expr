@@ -99,8 +99,5 @@ def main():
     # start training
     MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args)
 
-
-
-
 if __name__ == '__main__':
     main()

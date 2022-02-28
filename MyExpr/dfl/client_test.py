@@ -87,17 +87,19 @@ class ClientTEST(object):
         train_x = torch.from_numpy(self.streaming_data[iteration_id]['x']).float()
         train_y = torch.FloatTensor([self.streaming_data[iteration_id]['y']])
         outputs = self.model(train_x)
-        print(train_y)
-        loss = self.criterion(outputs, train_y)
+        # print(train_y)
+        loss = self.critpiperion(outputs, train_y)
         pred = torch.argmax(outputs, 0)
         self.record.append(((pred == train_y).sum().item(), len(train_y)))
         return loss, outputs
+
+
 
     def mutual_update(self, loss, outputs, top_k):
         criterion_KLD = nn.KLDivLoss(reduction='batchmean')
         # 聚合top_k的总KL散度
         KL_loss = 0
-        for index, _, out in enumerate(top_k):
+        for _ , (index, loss, out) in enumerate(top_k):
             KL_loss += criterion_KLD(F.softmax(outputs), F.softmax(out)).item()
         loss += KL_loss / (len(top_k))
 
