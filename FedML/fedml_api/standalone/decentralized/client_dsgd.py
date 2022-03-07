@@ -3,6 +3,7 @@ import random
 import torch
 
 
+
 class ClientDSGD(object):
     def __init__(self, model, model_cache, client_id, streaming_data, topology_manager, iteration_number,
                  learning_rate, batch_size, weight_decay, latency, b_symmetric):
@@ -71,7 +72,7 @@ class ClientDSGD(object):
         # 梯度
         grads_z = torch.autograd.grad(loss, self.model.parameters())
 
-        # 根据梯度更新参数
+        # 更新 z_t
         for x_paras, g_z in zip(list(self.model_x.parameters()), grads_z):
             temp = g_z.data.mul(0 - self.learning_rate)
             x_paras.data.add_(temp)
@@ -94,7 +95,9 @@ class ClientDSGD(object):
                 client.receive_neighbor_gradients(self.id, self.model_x, self.topology[index])
 
     def receive_neighbor_gradients(self, client_id, model_x, topo_weight):
+        # 相比OPS少了个平衡参数 omega
         self.neighbors_weight_dict[client_id] = model_x
+        # 用别人相对自己的权重进行更新
         self.neighbors_topo_weight_dict[client_id] = topo_weight
 
     def update_local_parameters(self):

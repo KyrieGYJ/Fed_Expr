@@ -42,6 +42,7 @@ class ClientPushsum(object):
         # neighbors_weight_dict
         self.neighbors_weight_dict = dict()
         self.neighbors_omega_dict = dict()
+        # 记录neighbors到自身的权重，而topology记录自身到neighbors的权重
         self.neighbors_topo_weight_dict = dict()
 
     def train_local(self, iteration_id):

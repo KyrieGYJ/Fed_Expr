@@ -74,6 +74,7 @@ def add_args(parser):
     parser.add_argument('--client_num_in_total', type=int, default=10, metavar='NN',
                         help='number of workers in a distributed cluster')
 
+    # 每轮选择有限个client进行通信
     parser.add_argument('--client_num_per_round', type=int, default=10, metavar='NN',
                         help='number of workers')
 

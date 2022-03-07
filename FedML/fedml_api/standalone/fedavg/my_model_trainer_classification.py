@@ -35,8 +35,11 @@ class MyModelTrainer(ModelTrainer):
             batch_loss = []
             for batch_idx, (x, labels) in enumerate(train_data):
                 x, labels = x.to(device), labels.to(device)
+                # logging.info("测试输出：-------")
                 model.zero_grad()
                 log_probs = model(x)
+                # logging.info("模型输出：", log_probs.shape)
+                # logging.info("标签：", labels.shape)
                 loss = criterion(log_probs, labels)
                 loss.backward()
 

@@ -8,11 +8,11 @@ import numpy as np
 import torch
 import wandb
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../FedML")))
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../FedML")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../")))
 
-from dfl.modified_dfl_api import MyExpr_decentralized_fl
+from MyExpr.dfl.SUSY.modified_dfl_api import myexpr_decentralized_fl
 from fedml_api.model.linear.lr import LogisticRegression
 from fedml_api.data_preprocessing.UCI.data_loader_for_susy_and_ro import DataLoader
 
@@ -97,7 +97,7 @@ def main():
     model_cache = LogisticRegression(input_dim, args.output_dim)
 
     # start training
-    MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args)
+    myexpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args)
 
 if __name__ == '__main__':
     main()

@@ -1,49 +1,15 @@
-import heapq
 import logging
-import math
 
 import numpy as np
 import wandb
-import torch
 
 from FedML.fedml_api.standalone.decentralized.client_pushsum import ClientPushsum
 from FedML.fedml_api.standalone.decentralized.topology_manager import TopologyManager
-from MyExpr.dfl.client_test import ClientTEST
-
-
-def cal_regret(client_list, client_number, t):
-    regret = 0
-    for client in client_list:
-        regret += np.sum(client.get_regret())
-
-    # 总共t+1轮训练，取 regret = 总loss / （客户数量 * 总轮次）
-    regret = regret / (client_number * (t + 1))
-    return regret
-
-# Average Loss (single round)
-def cal_loss(client_list, client_number, t):
-    loss = 0
-    for client in client_list:
-        loss += client.get_regret()[t]
-
-    loss = loss / client_number
-    return loss
-
-
-# acc
-def cal_acc(client_list, t):
-    correct = 0
-    total = 0
-    for client in client_list:
-        record = client.get_record()
-        correct += record[t][0]
-        total += record[t][1]
-
-    return correct / total
+from MyExpr.dfl.SUSY.client_test import ClientTEST
 
 
 # 主训练方法
-def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args):
+def myexpr_decentralized_fl(client_number, client_id_list, streaming_data, model, model_cache, args):
     # 读参数
     iteration_number_T = args.iteration_number
     lr_rate = args.learning_rate
@@ -102,31 +68,24 @@ def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model
     for t in range(iteration_number_T * epoch):
         logging.info('--- Iteration %d ---' % t)
 
-        # todo 读论文看一下这一块算法
-        if args.mode == 'DOL' or args.mode == 'PUSHSUM':
-            for client in client_list:
-                # todo 插入广播策略（在随机广播的基础上）
-                # 修改顺序：在训练前就把模型发送出去，以便联合更新
-                client.send_local_gradient_to_neighbor(client_list)
+        for client in client_list:
+            # todo 插入广播策略（在随机广播的基础上）
+            # 修改顺序：在训练前就把模型发送出去，以便联合更新
+            client.train(t)
+            client.send_local_gradient_to_neighbor(client_list)
 
-            # line 6: update
-            for client in client_list:
-                #  用topK方法选出有效的k个邻居
-                #  根据loss
-                #  todo 根据f1
-                top_k = top_k_by_loss(client, client_list, t)
-                #  计算自己的loss，不更新参数
-                loss, outputs = client.cal_loss(t)
-                # 把联合更新策略升级为深度互学习
-                client.mutual_update(loss, outputs, top_k)
+        # line 6: update
+        for client in client_list:
+            #  用topK方法选出有效的k个邻居
+            #  todo 根据f1
+            top_k = client.top_k_by_loss(client_list, t)
 
-        else:
-            for client in client_list:
-                client.train_local(t)
+            # 把联合更新策略升级为深度互学习
+            client.mutual_update(top_k)
 
         regret = cal_regret(client_list, client_number, t)
         # print("regret = %s" % regret)
-        loss = cal_loss(client_list, client_number, t)
+        loss = cal_average_loss(client_list, client_number, t)
         acc = cal_acc(client_list, t)
 
         # todo f1指标
@@ -138,17 +97,33 @@ def MyExpr_decentralized_fl(client_number, client_id_list, streaming_data, model
     wandb.save(log_file_path)
 
 
-def top_k_by_loss(client, client_list, t):
-    heap = []
-    train_x = torch.from_numpy(client.streaming_data[t]['x']).float()
-    train_y = torch.FloatTensor([client.streaming_data[t]['y']])
-    for index in range(len(client.topology)):
-        if client.topology[index] != 0 and index != client.id:
-            neighbor = client_list[index]
-            out = neighbor.model(train_x)
-            loss = neighbor.criterion(out, train_y)
-            heap.append([index, loss, out])
-    top_k = heapq.nlargest(math.floor(len(heap)*0.8), heap, lambda x : x[1])
-    return top_k
+# Average Loss (global)
+def cal_regret(client_list, client_number, t):
+    regret = 0
+    for client in client_list:
+        regret += np.sum(client.get_regret())
+
+    # 总共t+1轮训练，取 regret = 总loss / （客户数量 * 总轮次）
+    regret = regret / (client_number * (t + 1))
+    return regret
 
 
+# Average Loss (single round)(有问题，应该去掉)
+def cal_average_loss(client_list, client_number, t):
+    loss = 0
+    for client in client_list:
+        loss += client.get_regret()[t]
+    loss = loss / client_number
+    return loss
+
+
+# acc
+def cal_acc(client_list, t):
+    correct = 0
+    total = 0
+    for client in client_list:
+        record = client.get_record()
+        correct += record[t][0]
+        total += record[t][1]
+
+    return correct / total
