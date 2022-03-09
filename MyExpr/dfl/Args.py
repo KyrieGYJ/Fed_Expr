@@ -3,7 +3,7 @@ import argparse
 def add_args():
     parser = argparse.ArgumentParser(description='DFL-Mutual-standalone')
     # Training settings
-    parser.add_argument('--model', type=str, default='resnet56', metavar='N',
+    parser.add_argument('--model', type=str, default='resnet18', metavar='N',
                         help='neural network used in training')
 
     parser.add_argument('--dataset', type=str, default='cifar10', metavar='N',
@@ -57,6 +57,8 @@ def add_args():
 
     parser.add_argument('--broadcaster_strategy', type=str, default="flood", help='[flood, random, cluster, similarity]')
 
-    parser.add_argument('--mutual_trainer_strategy', type=str, default="mutual", help='[mutual, pushsum, dsgd]')
+    parser.add_argument('--mutual_trainer_strategy', type=str, default="local_and_mutual", help='[local_and_mutual, mutual, pushsum, dsgd]')
+
+    parser.add_argument('--num_workers', type=int, default=2)
 
     return parser

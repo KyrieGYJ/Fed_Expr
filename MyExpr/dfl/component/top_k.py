@@ -5,17 +5,21 @@ import math
 
 class TopKSelector(object):
 
-    def __init__(self, indicator):
+    def __init__(self):
         self.recorder = None
         self.client_list = None
         self.select = None
-        self.use(indicator)
 
     def use(self, indicator):
+        description = "TopKSelector use strategy:{:s}"
+        print(description.format(indicator))
         if indicator == "loss":
             self.select = self.top_k_by_loss
         elif indicator == "f1":
             self.select = self.top_k_by_f1
+
+    def register_recoder(self, recorder):
+        self.recorder = recorder
 
     def top_k_by_loss(self, train_X, train_Y, host_client_id):
         heap = []

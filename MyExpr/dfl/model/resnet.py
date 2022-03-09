@@ -24,7 +24,7 @@ def conv3x3(in_planes, out_planes, stride=1):
 
 
 def norm2d(planes, num_channels_per_group=32):
-    print("num_channels_per_group:{}".format(num_channels_per_group))
+    # print("num_channels_per_group:{}".format(num_channels_per_group))
     if num_channels_per_group > 0:
         return GroupNorm2d(planes, num_channels_per_group, affine=True,
                            track_running_stats=False)
@@ -66,6 +66,7 @@ class BasicBlock(nn.Module):
 
 
 class Bottleneck(nn.Module):
+    # expansion是指输出channel相比输入的扩大倍数，
     expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None,
@@ -104,8 +105,6 @@ class Bottleneck(nn.Module):
 
         return out
 
-
-# todo 有必要的话看一下这个layers
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, group_norm=0):
@@ -116,6 +115,9 @@ class ResNet(nn.Module):
         self.bn1 = norm2d(64, group_norm)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        # 第二个参数为plane，但是block实际输出的channel数为plane * expansion
+        # 第三个参数是指该layer含有的block数
         self.layer1 = self._make_layer(block, 64, layers[0],
                                        group_norm=group_norm)
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
@@ -128,6 +130,7 @@ class ResNet(nn.Module):
         self.avgpool = nn.AvgPool2d(1)
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
+        # todo 初始化限制有必要可以看下
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -147,6 +150,8 @@ class ResNet(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1, group_norm=0):
         downsample = None
+        # 第一个条件不太懂
+        # 第二个条件表示如果self.inplanes不等于block扩大后的倍数，则要采用downsample模块强行对齐
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,

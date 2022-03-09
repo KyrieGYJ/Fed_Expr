@@ -126,9 +126,9 @@ class Data(object):
         # idx_train = sorted(range(len(trainset.targets)), key=lambda k: trainset.targets[k])  #split by class
         idx_test = range(len(testset.targets))
         splited_testset = [Subset(testset, idx_test[off - l:off]) for off, l in zip(cumsum_test, num_test)]
-        self.test_all = DataLoader(testset, batch_size=args.batchsize, shuffle=False, num_workers=4)
-        self.train_loader = [DataLoader(splited_trainset[i], batch_size=args.batchsize, shuffle=True, num_workers=4)
-                             for i in range(args.node_num)]
-        self.test_loader = [DataLoader(splited_testset[i], batch_size=args.batchsize, shuffle=False, num_workers=4)
-                            for i in range(args.node_num)]
-        # self.test_loader = DataLoader(testset, batch_size=args.batchsize, shuffle=False, num_workers=4)
+        self.test_all = DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        self.train_loader = [DataLoader(splited_trainset[i], batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+                             for i in range(args.client_num_in_total)]
+        self.test_loader = [DataLoader(splited_testset[i], batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+                            for i in range(args.client_num_in_total)]
+        # self.test_loader = DataLoader(testset, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)

@@ -3,11 +3,10 @@ import torch.nn as nn
 import logging
 
 class Client(object):
-    def __init__(self, model, client_id, mutual_trainer, args, train_loader, test_loader):
+    def __init__(self, model, client_id, args, train_loader, test_loader):
         self.model = model
         self.client_id = client_id
         self.data = None
-        self.mutual_trainer = mutual_trainer
         self.train_loader = train_loader
         self.test_loader = test_loader
 
@@ -16,7 +15,8 @@ class Client(object):
         self.criterion_KLD = nn.KLDivLoss(reduction='batchmean')
 
         self.args = args
-        self.device = args.device
+        # self.device = args.device
+        self.it = train_loader.__iter__()
 
         # 组件
         # top_K选择器，搭载多个方法
@@ -41,10 +41,13 @@ class Client(object):
         self.recorder = recorder
         self.broadcaster = broadcaster
 
+    def refresh_it(self):
+        del self.it
+        self.it = self.train_loader.__iter__()
+
     # 训练本地模型
-    def train(self, iteration):
+    def train(self, train_X, train_Y):
         self.optimizer.zero_grad()
-        train_X, train_Y = self.train_loader.dataset[iteration]
         outputs = self.model(train_X)
         loss = self.criterion_CE(outputs, train_Y)
         loss.backward()
@@ -53,9 +56,8 @@ class Client(object):
         self.recorder.record_local_train_loss(self.client_id, loss.detach().numpy())
 
     # 采用DML进行协同更新
-    def deep_mutual_update(self, iteration):
+    def deep_mutual_update(self, train_X, train_Y):
         self.optimizer.zero_grad()
-        train_X, train_Y = self.train_loader.dataset[iteration]
 
         # 计算本地模型loss
         local_outputs = self.model(train_X)

@@ -2,17 +2,18 @@
 
 class Broadcaster(object):
 
-    def __init__(self, strategy, recorder):
+    def __init__(self):
         # neighbors_weight_dict
         self.receive = None
         self.send = None
-        self.use(strategy)
-        self.recorder = recorder
+        self.recorder = None
 
-    def register(self, recorder):
+    def register_recorder(self, recorder):
         self.recorder = recorder
 
     def use(self, strategy):
+        description = "Broadcaster use strategy:{:s}"
+        print(description.format(strategy))
         if strategy == "flood":
             self.send = self.send_to_neighbors_flood
         self.receive = self.receive_from_neighbors
