@@ -24,6 +24,7 @@ class Broadcaster(object):
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for receiver_id in client_dic.keys():
             if topology[receiver_id] != 0 and receiver_id != sender_id:
+                # print("{:d} 发送到 {:d}".format(sender_id, receiver_id))
                 self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id])
 
     def receive_from_neighbors(self, sender_id, model, receiver_id, topology_weight):
