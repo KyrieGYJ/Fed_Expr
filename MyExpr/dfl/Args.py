@@ -37,10 +37,9 @@ def add_args():
     parser.add_argument('--client_num_in_total', type=int, default=10, metavar='NN',
                         help='number of workers in a distributed cluster')
 
-    parser.add_argument('--topology_neighbors_num_undirected', type=int, default=5)
+    parser.add_argument('--topology_neighbors_num_undirected', type=int, default=20)
 
     parser.add_argument('--topology_neighbors_num_directed', type=int, default=0)
-
 
     parser.add_argument('--comm_round', type=int, default=10,
                         help='how many round of communications we shoud use')
@@ -58,7 +57,8 @@ def add_args():
 
     parser.add_argument('--topK_strategy', type=str, default="loss", help='[loss, f1_marco, f1_micro]')
 
-    parser.add_argument('--broadcaster_strategy', type=str, default="flood", help='[flood, random, cluster, similarity]')
+    parser.add_argument('--broadcaster_strategy', type=str, default="flood",
+                        help='[flood, affinity, random, cluster, similarity]')
 
     parser.add_argument('--trainer_strategy', type=str, default="local_and_mutual",
                         help='[local_and_mutual, mutual, local_train, model_interpolation, pushsum]')
@@ -78,5 +78,8 @@ def add_args():
     parser.add_argument('--train_split', type=float, default=0.8, help="训练数据集比例")
 
     parser.add_argument('--communication_wise', type=str, default='epoch', help="iteration, epoch")
+
+    parser.add_argument('--local_train_stop_point', type=int, default=99999999,
+                        help="communication round where local train stop")
 
     return parser

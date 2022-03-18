@@ -19,6 +19,7 @@ from MyExpr.dfl.model.resnet import resnet34
 from MyExpr.dfl.model.resnet import resnet50
 from MyExpr.dfl.model.resnet import resnet101
 from MyExpr.dfl.model.resnet import resnet152
+from MyExpr.dfl.model.cnn import BaseConvNet
 from MyExpr.dfl.Args import add_args
 from MyExpr.dfl.component.client import Client
 from MyExpr.dfl.component.top_k import TopKSelector
@@ -93,6 +94,8 @@ elif args.model == "resnet101":
     model_builder = resnet101
 elif args.model == "resnet152":
     model_builder = resnet152
+elif args.model == "BaseConvNet":
+    model_builder = BaseConvNet
 
 # 7、初始化client, 选择搭载模型等
 print("初始化clients")
@@ -107,88 +110,28 @@ for c_id in range(client_num_in_total):
     client_dic[c_id] = c
 print("初始化clients完毕")
 
+broadcaster.initialize()
+
 name = None if args.name == '' else args.name
-# wandb.init(project="dfl-topK-dml(new)",
-#            entity="kyriegyj",
-#            name=name,
-#            config=args)
+
+wandb.init(project="dfl2",
+           entity="kyriegyj",
+           name=name,
+           config=args)
 
 ###############################
 # 1 communication per E epoch #
 ###############################
-for round in range(args.comm_round):
-    print("-----开始第{}轮训练-----".format(round))
-    avg_local_train_loss, local_train_acc, avg_mutual_train_loss, mutual_train_acc = trainer.train()
-    print("avg_local_train_loss:{}, local_train_acc:{}, avg_mutual_train_loss:{}, mutual_train_acc:{}".
-          format(avg_local_train_loss, local_train_acc, avg_mutual_train_loss, mutual_train_acc))
-    print("-----开始第{}轮训练-----".format(round))
-    # wandb.log(step=round, data={"avg_local_train_loss": avg_local_train_loss, "local_train_acc": local_train_acc,
-    #                             "avg_mutual_train_loss": avg_mutual_train_loss, "mutual_train_acc": mutual_train_acc})
-
-#################################
-# 1 communication per iteration #
-#################################
-# todo 有空重新封装这块log
-# # 8、开始训练 （逻辑写错了）
-# for epoch in range(epochs):
-#     # local_train
-#     #
-#     if args.trainer_strategy == "local_and_mutual":
-#         total_local_train_loss, total_local_train_correct, total_mutual_train_loss = 0, 0, 0
-#     elif args.trainer_strategy == "mutual":
-#         total_mutual_train_loss = 0
-#     elif args.trainer_strategy in ["local_train", "model_interpolation"]:
-#         total_local_train_loss, total_local_train_correct = 0, 0
-#
-#     for iteration in range(train_iteration):
-#         logging.info("============开始训练(第:d轮)============".format(iteration))
-#         # local_train+mutual_train
-#         if args.trainer_strategy == "local_and_mutual":
-#             local_train_loss, local_train_correct, mutual_train_loss = trainer.train()
-#             total_local_train_loss += local_train_loss
-#             total_local_train_correct += local_train_correct
-#             total_mutual_train_loss += mutual_train_loss
-#         # mutual_train
-#         elif args.trainer_strategy == "mutual":
-#             mutual_train_loss = trainer.train()
-#             total_mutual_train_loss += mutual_train_loss
-#         elif args.trainer_strategy in ["local_train", "model_interpolation"]:
-#             local_train_loss, local_train_correct = trainer.train()
-#             total_local_train_loss += local_train_loss
-#             total_local_train_correct += local_train_correct
-#         logging.info("============结束训练(第:d轮)============".format(iteration))
-#
-#     if args.trainer_strategy == "local_and_mutual":
-#         avg_local_train_loss = total_local_train_loss / (client_num_in_total * train_iteration)
-#         avg_mutual_train_loss = total_mutual_train_loss / (client_num_in_total * train_iteration)
-#         avg_local_train_acc = total_local_train_correct / (client_num_in_total * train_iteration * batch_size)
-#         wandb.log(step=epoch, data={"avg_local_train_loss": avg_local_train_loss,
-#                                     "avg_local_train_acc": avg_local_train_acc,
-#                                     "avg_mutual_train_loss": avg_mutual_train_loss})
-#     elif args.trainer_strategy == "mutual":
-#         avg_mutual_train_loss = total_mutual_train_loss / (client_num_in_total * train_iteration)
-#         wandb.log(step=epoch, data={"avg_mutual_train_loss": avg_mutual_train_loss})
-#     elif args.trainer_strategy in ["local_train", "model_interpolation"]:
-#         avg_local_train_loss = total_local_train_loss / (client_num_in_total * train_iteration)
-#         avg_local_train_acc = total_local_train_correct / (client_num_in_total * train_iteration * batch_size)
-#         wandb.log(step=epoch, data={"avg_local_train_loss": avg_local_train_loss,
-#                                     "avg_local_train_acc": avg_local_train_acc})
-#
-#     # test
-#     # 在本地数据集上测试
-#     avg_local_test_loss, avg_local_test_acc = trainer.local_test()
-#     # 在全局数据集上测试
-#     avg_overall_test_loss, avg_overall_test_acc = trainer.overall_test()
-#
-#     wandb.log(step=epoch, data={"avg_local_test_loss": avg_local_test_loss,
-#                                 "avg_local_test_acc": avg_local_test_acc,
-#                                 "avg_overall_test_loss": avg_overall_test_loss,
-#                                 "avg_overall_test_acc": avg_overall_test_acc})
-#
-#     trainer.next_epoch()
-#     recorder.next_epoch()
-
-# wandb.finish()
+for rounds in range(args.comm_round):
+    print("-----开始第{}轮训练-----".format(rounds))
+    recorder.rounds = rounds
+    trainer.train()
+    # 在本地数据集上测试
+    trainer.local_test()
+    # 在全局数据集上测试
+    trainer.overall_test()
+    print("-----第{}轮训练结束-----".format(rounds))
+wandb.finish()
 
 # 9、保存模型
 client_model_dic = {}

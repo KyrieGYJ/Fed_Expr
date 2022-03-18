@@ -1,8 +1,9 @@
 import torch.nn as nn
+import torch
+import wandb
 
 
 # 协同训练器：采用某种协同训练策略, 控制某一次训练
-# 写错了。。。
 #
 
 class Trainer(object):
@@ -25,18 +26,14 @@ class Trainer(object):
     def use(self, strategy):
         description = "Trainer use strategy:{:s}"
         print(description.format(strategy))
-        if self.args.communication_wise == "epoch":
-            if strategy == "local_and_mutual":
-                self.train = self.local_and_mutual_epoch
-        else:
-            if strategy == "local_and_mutual":
-                self.train = self.local_and_mutual_learning_collaborate_update
-            elif strategy == "mutual":
-                self.train = self.mutual_learning_collaborate_update
-            elif strategy == "local_train":
-                self.train = self.local_train
-            elif strategy == "model_interpolation":
-                self.train = self.model_interpolation
+        if strategy == "local_and_mutual":
+            self.train = self.local_and_mutual_epoch
+        elif strategy == "local":
+            self.train = self.local
+        elif strategy == "mutual":
+            self.train = self.mutual
+        elif strategy == "model_interpolation":
+            self.train = self.model_interpolation
 
     def set_test_loader(self, test_loader):
         self.test_loader = test_loader
@@ -46,8 +43,76 @@ class Trainer(object):
     ###############################
     def local_and_mutual_epoch(self):
         # 本地训练
+        rounds = self.recorder.rounds
+        total_loss, total_correct = 0.0, 0.0
+        if rounds >= self.args.local_train_stop_point:
+            print("本地训练已于第{}个communication_round停止".format(self.args.local_train_stop_point))
+        else:
+            print("-----开始本地训练-----")
+            for c_id in self.client_dic:
+                print("{}：开始训练".format(c_id))
+                loss, correct = self.client_dic[c_id].local_train()
+                total_loss += loss
+                total_correct += correct
+            print("-----本地训练结束-----")
+        total_batch_num = len(self.client_dic) * self.train_iteration * self.args.epochs
+        avg_local_train_loss, local_train_acc = total_loss / total_batch_num, total_correct / (total_batch_num * self.batch_size)
+
+        # 广播
+        print("-----开始广播-----")
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            client.broadcast()
+            print("client {} 广播完毕".format(c_id))
+        # print(self.client_dic[0].broadcaster.p, self.client_dic[0].broadcaster.w)
+        print("-----广播结束-----")
+
+        # 查看情况
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            print("client {}: received {} neighbor models last round".format(c_id, len(client.received_model_dict)))
+
+        # 选择topk
+        print("-----开始选择topK-----")
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            client.select_topK_epoch_wise()
+        print("-----选择topK结束-----")
+
+        # mutual_update
+        print("-----开始深度互学习-----")
+        total_loss, total_correct = 0.0, 0.0
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            loss, correct = client.deep_mutual_update_epoch_wise()
+            total_loss += loss
+            total_correct += correct
+        print("-----深度互学习结束-----")
+
+        # 滑动字典，更迭上轮的接受模型
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            client.last_received_model_dict, client.received_model_dict = client.received_model_dict, {}
+            client.last_received_topology_weight_dict, client.received_topology_weight_dict = client.received_topology_weight_dict, {}
+
+        # 无论几轮local_train都是一轮mutual train
+        # total_batch_num = len(self.client_dic) * self.train_iteration * self.args.epochs
+        total_batch_num = len(self.client_dic) * self.train_iteration
+        avg_mutual_train_loss = total_loss / total_batch_num
+        mutual_train_acc = total_correct / (total_batch_num * self.batch_size)
+
+        print("avg_local_train_loss:{}, local_train_acc:{}, avg_mutual_train_loss:{}, mutual_train_acc:{}".
+              format(avg_local_train_loss, local_train_acc, avg_mutual_train_loss, mutual_train_acc))
+
+        print("-----上传至wandb-----")
+        wandb.log(step=rounds, data={"avg_local_train_loss": avg_local_train_loss, "local_train_acc": local_train_acc,
+                                    "avg_mutual_train_loss": avg_mutual_train_loss, "mutual_train_acc": mutual_train_acc})
+
+    def local(self):
+        # 本地训练
+        rounds = self.recorder.rounds
         print("-----开始本地训练-----")
-        total_loss, total_correct = 0, 0
+        total_loss, total_correct = 0.0, 0.0
         for c_id in self.client_dic:
             print("{}：开始训练".format(c_id))
             loss, correct = self.client_dic[c_id].local_train()
@@ -55,192 +120,162 @@ class Trainer(object):
             total_correct += correct
         print("-----本地训练结束-----")
 
-        total_smaple_num = len(self.client_dic) * self.train_iteration * self.batch_size
-        avg_local_train_loss, local_train_acc = total_loss / total_smaple_num, total_correct / total_smaple_num
+        total_batch_num = len(self.client_dic) * self.train_iteration * self.args.epochs
+        avg_local_train_loss, local_train_acc = total_loss / total_batch_num, total_correct / (
+                    total_batch_num * self.batch_size)
 
+        print("avg_local_train_loss:{}, local_train_acc:{}".
+              format(avg_local_train_loss, local_train_acc))
+
+        print("-----上传至wandb-----")
+        wandb.log(step=rounds, data={"avg_local_train_loss": avg_local_train_loss, "local_train_acc": local_train_acc})
+
+    def mutual(self):
         # 广播
+        rounds = self.recorder.rounds
         print("-----开始广播-----")
         for c_id in self.client_dic:
             client = self.client_dic[c_id]
             client.broadcast()
+            print("client {} 广播完毕".format(c_id))
+        # print(self.client_dic[0].broadcaster.p, self.client_dic[0].broadcaster.w)
         print("-----广播结束-----")
 
+        # 查看情况
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            print("client {}: received {} neighbor models last round".format(c_id, len(client.received_model_dict)))
+
         # 选择topk
-        print("-----选择topK-----")
+        print("-----开始选择topK-----")
         for c_id in self.client_dic:
             client = self.client_dic[c_id]
             client.select_topK_epoch_wise()
         print("-----选择topK结束-----")
         # mutual_update
-        total_loss, total_correct = 0, 0
+        print("-----开始深度互学习-----")
+        total_loss, total_correct = 0.0, 0.0
         for c_id in self.client_dic:
             client = self.client_dic[c_id]
             loss, correct = client.deep_mutual_update_epoch_wise()
             total_loss += loss
             total_correct += correct
-        total_smaple_num = len(self.client_dic) * self.train_iteration * self.batch_size
-        avg_mutual_train_loss, mutual_train_acc = total_loss / total_smaple_num, total_correct / total_smaple_num
-        return avg_local_train_loss, local_train_acc, avg_mutual_train_loss, mutual_train_acc
+        print("-----深度互学习结束-----")
 
-    #################################
-    # 1 communication per iteration #
-    #################################
-    # todo 不能为每个client打开一个迭代器，系统资源浪费
-    # 刷新所有client的dataloader迭代器
-    def next_epoch(self):
-        for c_id in self.client_dic.keys():
-            self.client_dic[c_id].refresh_train_it()
-
-    # 清空每个client本轮收到的模型等数据
-    def clear_cache(self):
-        for c_id in self.client_dic.keys():
-            self.client_dic[c_id].clear_cache()
-
-    # (1) 一次本地训练+协同训练
-    def local_and_mutual_learning_collaborate_update(self):
-        # 所有client的local_train
-        total_local_train_loss = 0
-        total_local_train_correct = 0
-        # 所有client的mutual_train
-        total_mutual_train_loss = 0
-
-        # ======== 这一块有点臭，因为想按batch读还是得用迭代器，这就涉及需要保存读取出来的数据，========
-        # ======== 将这个过程分散到client中比较麻烦，不如直接在trainer中一起读出集中管理 ============
-        client_data_dic = {}
-        # load data
-        for c_id in self.client_dic.keys():
-            it = self.client_dic[c_id].train_it
-            _, (x, y) = next(it)
-            client_data_dic[c_id] = [x, y]
-        # local train
-        for c_id in self.client_dic.keys():
+        for c_id in self.client_dic:
             client = self.client_dic[c_id]
-            local_train_loss, local_train_correct = client.train(client_data_dic[c_id][0],
-                                                                                client_data_dic[c_id][1])
-            total_local_train_loss += local_train_loss
-            total_local_train_correct += local_train_correct
+            client.last_received_model_dict, client.received_model_dict = client.received_model_dict, {}
+            client.last_received_topology_weight_dict, client.received_topology_weight_dict = client.received_topology_weight_dict, {}
 
-        # send model
-        for c_id in self.client_dic.keys():
-            client = self.client_dic[c_id]
-            client.broadcast()
+        # 无论几轮local_train都是一轮mutual train
+        # total_batch_num = len(self.client_dic) * self.train_iteration * self.args.epochs
+        total_batch_num = len(self.client_dic) * self.train_iteration
+        avg_mutual_train_loss = total_loss / total_batch_num
+        mutual_train_acc = total_correct / (total_batch_num * self.batch_size)
 
-        # select top_K
-        for c_id in self.client_dic.keys():
-            client = self.client_dic[c_id]
-            client.select_topK(client_data_dic[c_id][0], client_data_dic[c_id][1])
+        print("avg_mutual_train_loss:{}, mutual_train_acc:{}".
+              format(avg_mutual_train_loss, mutual_train_acc))
 
-        # mutual_learning
-        for c_id in self.client_dic.keys():
-            client = self.client_dic[c_id]
-            mututal_train_loss = client.deep_mutual_update(client_data_dic[c_id][0], client_data_dic[c_id][1])
-            total_mutual_train_loss += mututal_train_loss
+        print("-----上传至wandb-----")
+        wandb.log(step=rounds, data={"avg_mutual_train_loss": avg_mutual_train_loss, "mutual_train_acc": mutual_train_acc})
 
-        self.clear_cache()
-
-        return total_local_train_loss, total_local_train_correct, total_mutual_train_loss
-        # self.recorder.next_iteration()
-
-    # (2) 只进行协同训练
-    def mutual_learning_collaborate_update(self):
-        total_mutual_train_loss = 0
-        client_dic = self.client_dic
-        client_data_dic = {}
-        # load data
-        for c_id in client_dic.keys():
-            it = client_dic[c_id].train_it
-            _, (x, y) = next(it)
-            client_data_dic[c_id] = [x, y]
-        # send model
-        for c_id in client_dic.keys():
-            client_dic[c_id].broadcast()
-        # select top_K
-        for c_id in client_dic.keys():
-            client_dic[c_id].select_topK(client_data_dic[c_id][0], client_data_dic[c_id][1])
-        # mutual_learning
-        for c_id in self.client_dic.keys():
-            mututal_train_loss = client_dic[c_id].deep_mutual_update(client_data_dic[c_id][0],
-                                                                     client_data_dic[c_id][1])
-            total_mutual_train_loss += mututal_train_loss
-        self.clear_cache()
-
-        return total_mutual_train_loss
-
-    # (3) 只进行本地训练
-    def local_train(self):
-        # 所有client的local_train
-        total_local_train_loss = 0
-        total_local_train_correct = 0
-        # local train
-        for c_id in self.client_dic.keys():
-            client = self.client_dic[c_id]
-            it = client.train_it
-            _, (x, y) = next(it)
-            local_train_loss, local_train_correct = self.client_dic[c_id].train(x, y)
-            total_local_train_loss += local_train_loss
-            total_local_train_correct += local_train_correct
-        return total_local_train_loss, total_local_train_correct
-
-    # (4) 模型插值
     def model_interpolation(self):
         # 本地训练
-        total_local_train_loss, total_local_train_correct = 0, 0
-        # load data
-        client_data_dic = {}
-        for c_id in self.client_dic.keys():
-            it = self.client_dic[c_id].train_it
-            _, (x, y) = next(it)
-            client_data_dic[c_id] = [x, y]
-        # local train
-        for c_id in self.client_dic.keys():
-            client = self.client_dic[c_id]
-            local_train_loss, local_train_correct = client.train(client_data_dic[c_id][0],
-                                                                 client_data_dic[c_id][1])
-            total_local_train_loss += local_train_loss
-            total_local_train_correct += local_train_correct
-        # send model
-        for c_id in self.client_dic.keys():
+        rounds = self.recorder.rounds
+        print("-----开始本地训练-----")
+        total_loss, total_correct = 0.0, 0.0
+        for c_id in self.client_dic:
+            print("{}：开始训练".format(c_id))
+            loss, correct = self.client_dic[c_id].local_train()
+            total_loss += loss
+            total_correct += correct
+        print("-----本地训练结束-----")
+        total_batch_num = len(self.client_dic) * self.train_iteration * self.args.epochs
+        avg_local_train_loss, local_train_acc = total_loss / total_batch_num, total_correct / (
+                    total_batch_num * self.batch_size)
+        # 广播
+        print("-----开始广播-----")
+        for c_id in self.client_dic:
             client = self.client_dic[c_id]
             client.broadcast()
+            print("client {} 广播完毕".format(c_id))
+        # print(self.client_dic[0].broadcaster.p, self.client_dic[0].broadcaster.w)
+        print("-----广播结束-----")
 
-        # select top_K
-        for c_id in self.client_dic.keys():
+        # 查看情况
+        for c_id in self.client_dic:
             client = self.client_dic[c_id]
-            client.select_topK(client_data_dic[c_id][0], client_data_dic[c_id][1])
+            print("client {}: received {} neighbor models last round".format(c_id, len(client.received_model_dict)))
+
+        # 选择topk
+        print("-----开始选择topK-----")
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            client.select_topK_epoch_wise()
+        print("-----选择topK结束-----")
+
         # 模型插值
         for c_id in self.client_dic.keys():
             client = self.client_dic[c_id]
             client.model_interpolation_update()
 
-        return total_local_train_loss, total_local_train_correct
+        # 滑动字典，更迭上轮的接受模型
+        for c_id in self.client_dic:
+            client = self.client_dic[c_id]
+            client.last_received_model_dict, client.received_model_dict = client.received_model_dict, {}
+            client.last_received_topology_weight_dict, client.received_topology_weight_dict = client.received_topology_weight_dict, {}
+
+        # 无论几轮local_train都是一轮mutual train
+        # total_batch_num = len(self.client_dic) * self.train_iteration * self.args.epochs
+        total_batch_num = len(self.client_dic) * self.train_iteration
+        avg_mutual_train_loss = total_loss / total_batch_num
+        mutual_train_acc = total_correct / (total_batch_num * self.batch_size)
+
+        print("avg_local_train_loss:{}, local_train_acc:{}".format(avg_local_train_loss, local_train_acc))
+
+        print("-----上传至wandb-----")
+        wandb.log(step=rounds, data={"avg_local_train_loss": avg_local_train_loss, "local_train_acc": local_train_acc})
 
     # test local per epoch
     def local_test(self):
-        total_loss = 0
-        total_correct = 0
+        rounds = self.recorder.rounds
+        total_loss = 0.0
+        total_correct = 0.0
+
         for c_id in self.client_dic.keys():
             client = self.client_dic[c_id]
-            for _, (test_X, test_Y) in enumerate(client.test_loader):
-                loss, correct = client.test(test_X, test_Y)
-                total_loss += loss
-                total_correct += correct
+            with torch.no_grad():
+                for _, (test_X, test_Y) in enumerate(client.test_loader):
+                    test_X, test_Y = test_X.to(self.args.device), test_Y.to(self.args.device)
+                    loss, correct = client.test(test_X, test_Y)
+                    total_loss += loss.item()
+                    total_correct += correct
+
         avg_loss = total_loss / (len(self.client_dic) * len(self.client_dic[0].test_loader))
         avg_acc = total_correct / (len(self.client_dic) * len(self.client_dic[0].test_loader) * self.client_dic[0].test_loader.batch_size)
+        print("avg_local_test_loss:{}, avg_local_test_acc:{}".format(avg_loss, avg_acc))
 
+        print("-----上传至wandb-----")
+        wandb.log(step=rounds, data={"avg_local_test_loss": avg_loss, "avg_local_test_acc": avg_acc})
         return avg_loss, avg_acc
         # self.recorder.record_local_test(avg_loss, avg_acc)
 
     def overall_test(self):
-        total_loss = 0
-        total_correct = 0
-        for _, (test_X, test_Y) in enumerate(self.test_loader):
-            for c_id in self.client_dic.keys():
-                client = self.client_dic[c_id]
-                loss, correct = client.test(test_X, test_Y)
-                total_loss += loss
-                total_correct += correct
+        rounds = self.recorder.rounds
+        total_loss = 0.0
+        total_correct = 0.0
+
+        with torch.no_grad():
+            for _, (test_X, test_Y) in enumerate(self.test_loader):
+                test_X, test_Y = test_X.to(self.args.device), test_Y.to(self.args.device)
+                for c_id in self.client_dic.keys():
+                    client = self.client_dic[c_id]
+                    loss, correct = client.test(test_X, test_Y)
+                    total_loss += loss
+                    total_correct += correct
         avg_loss = total_loss / (len(self.test_loader) * len(self.client_dic))
         avg_acc = total_correct / (len(self.test_loader) * len(self.client_dic) * self.test_loader.batch_size)
+        print("avg_overall_test_loss:{}, avg_overall_test_acc:{}".format(avg_loss, avg_acc))
 
-        return avg_loss, avg_acc
-        # self.recorder.record_overall_test(avg_loss, avg_acc)
+        print("-----上传至wandb-----")
+        wandb.log(step=rounds, data={"avg_overall_test_loss": avg_loss, "avg_overall_test_acc": avg_acc})

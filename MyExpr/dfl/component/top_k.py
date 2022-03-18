@@ -13,50 +13,40 @@ class TopKSelector(object):
     def use(self, indicator):
         description = "TopKSelector use strategy:{:s}"
         print(description.format(indicator))
-        if self.args.communication_wise == "epoch":
-            if indicator == "loss":
-                self.select = self.top_k_by_loss_epoch_wise
-        else:
-            if indicator == "loss":
-                self.select = self.top_k_by_loss
-            elif indicator == "f1_marco":
-                self.select = self.top_k_by_f1_marco
-            elif indicator == "f1_micro":
-                self.select = self.top_k_by_f1_micro
+        if indicator == "loss":
+            self.select = self.top_k_by_loss_epoch_wise
 
     def register_recoder(self, recorder):
         self.recorder = recorder
 
     def top_k_by_loss_epoch_wise(self, host):
         heap = []
-        host_id = host.client_id
-        for index in host.neighbors_weight_dict:
-             if index != host_id:
-                total_loss = 0
-                neighbor_model = host.neighbors_weight_dict[index]
-                for idx, (val_X, val_Y) in enumerate(host.validation_loader):
-                    val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
+        iteration = 0
+        loss_dic = {}
+
+        for index in host.received_model_dict:
+            loss_dic[index] = 0
+
+        with torch.no_grad():
+            for idx, (val_X, val_Y) in enumerate(host.validation_loader):
+                val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
+                for index in host.received_model_dict:
+                    neighbor_model = host.received_model_dict[index]
                     outputs = neighbor_model(val_X)
                     loss = host.criterion_CE(outputs, val_Y)
-                    total_loss += loss
-                heap.append([index, total_loss])
-        top_k = heapq.nlargest(math.floor(10), heap, lambda x: x[1])
+
+                    if "cuda" in self.recorder.args.device:
+                        loss = loss.cpu()
+
+                    loss_dic[index] += loss.item()
+                    iteration += 1
+
+        for index in host.received_model_dict:
+            heap.append([index, loss_dic[index]])
+        top_k = heapq.nlargest(10, heap, lambda x: -x[1])
         return top_k
 
-    def top_k_by_loss(self, train_X, train_Y, host):
-        heap = []
-        host_client_id = host.client_id
-        # todo 这种是必然收到邻居模型的情况，可能要改成随机
-        host_topology = self.recorder.topology_manager.get_symmetric_neighbor_list(host_client_id)
-        for index in range(len(host_topology)):
-            if host_topology[index] != 0 and index != host_client_id:
-                neighbor_model = host.neighbors_weight_dict[index]
-                outputs = neighbor_model(train_X)
-                loss = host.criterion_CE(outputs, train_Y)
-                heap.append([index, loss, outputs])
-        # k 取 len(heap) * 0.8
-        top_k = heapq.nlargest(math.floor(len(heap) * 0.8), heap, lambda x: x[1])
-        return top_k
+    # todo 该f1筛选法
 
     def top_k_by_f1_marco(self, train_X, train_Y, host):
         heap = []
@@ -65,7 +55,7 @@ class TopKSelector(object):
         host_topology = self.recorder.topology_manager.get_symmetric_neighbor_list(host_client_id)
         for index in range(len(host_topology)):
             if host_topology[index] != 0 and index != host_client_id:
-                neighbor_model = host.neighbors_weight_dict[index]
+                neighbor_model = host.received_model_dict[index]
                 outputs = neighbor_model(train_X)
                 pred = outputs.argmax(dim=1)
                 pred_mask = torch.zeros(outputs.size()).scatter_(1, pred.cpu().view(-1, 1), 1.)
@@ -81,7 +71,7 @@ class TopKSelector(object):
                 f1 = 2 * recall * precision / (recall + precision + epsilon)
                 f1_marco = f1.sum(0) / f1.size(0)
                 heap.append([index, f1_marco, outputs])
-        top_k = heapq.nlargest(math.floor(len(heap) * 0.8), heap, lambda x: x[1])
+        top_k = heapq.nlargest(math.floor(len(heap) * 0.8), heap, lambda x: -x[1])
         return top_k
 
     def top_k_by_f1_micro(self, train_X, train_Y, host):
@@ -91,7 +81,7 @@ class TopKSelector(object):
         host_topology = self.recorder.topology_manager.get_symmetric_neighbor_list(host_client_id)
         for index in range(len(host_topology)):
             if host_topology[index] != 0 and index != host_client_id:
-                neighbor_model = host.neighbors_weight_dict[index]
+                neighbor_model = host.received_model_dict[index]
                 outputs = neighbor_model(train_X)
                 pred = outputs.argmax(dim=1)
                 pred_mask = torch.zeros(outputs.size()).scatter_(1, pred.cpu().view(-1, 1), 1.)
@@ -111,6 +101,6 @@ class TopKSelector(object):
                 recall_sum = acc_sum / (acc_sum + fn_sum + epsilon)
                 f1_micro = 2 * recall_sum * precision_sum / (recall_sum + precision_sum + epsilon)
                 heap.append([index, f1_micro, outputs])
-        top_k = heapq.nlargest(math.floor(len(heap) * 0.8), heap, lambda x: x[1])
+        top_k = heapq.nlargest(math.floor(len(heap) * 0.8), heap, lambda x: -x[1])
         return top_k
 

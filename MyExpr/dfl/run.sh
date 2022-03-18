@@ -9,10 +9,13 @@ N=$5
 DEVICE=$6
 TRAINER_STRATEGY=$7
 TOPK_STRATEGY=$8
-DATA_DISTRIBUTION=$9
-NAME=${MODEL}-lr${LR}-bc${BS}-ts${TRAINER_STRATEGY}-${DATA_DISTRIBUTION}
+BROAD_STRATEGY=$9
+DATA_DISTRIBUTION=${10}
+COMM_ROUND=${11}
+NEIGHBOR_UNDIRECTED=${12}
+LOCAL_TRAIN_STOP_POINT=${13}
+NAME=${14}
 
-echo $NAME
 
 python3 main.py \
 --lr $LR \
@@ -23,6 +26,10 @@ python3 main.py \
 --device $DEVICE \
 --trainer_strategy $TRAINER_STRATEGY \
 --topK_strategy $TOPK_STRATEGY \
+--broadcaster_strategy $BROAD_STRATEGY \
 --data_distribution $DATA_DISTRIBUTION \
+--comm_round $COMM_ROUND \
+--topology_neighbors_num_undirected $NEIGHBOR_UNDIRECTED \
+--local_train_stop_point $LOCAL_TRAIN_STOP_POINT \
 --name $NAME
 

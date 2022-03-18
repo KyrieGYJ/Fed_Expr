@@ -59,6 +59,8 @@ class Recorder(object):
         self.print_log = False
         self.wandb_log = True
 
+        self.rounds = 0
+
     # iteration 其实应该放进Snapshot里
     def record_local_train_loss(self, c_id, loss):
         self.cur_snapshot.local_train_loss_per_client[c_id] = loss
