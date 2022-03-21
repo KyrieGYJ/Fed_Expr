@@ -63,15 +63,23 @@ print("Data:", os.path.abspath(os.path.join(os.getcwd(), args.data_dir)))
 data = Data(args)
 data.generate_loader()
 train_loader, validation_loader, test_loader, test_all = data.train_loader, data.validation_loader, data.test_loader, data.test_all
+test_non_iid, client_class_dic, class_client_dic= data.test_non_iid, data.client_class_dic, data.class_client_dic
+# print("length of test_all: {}".format(len(test_all)))
+# print("length of test_non_iid: {}".format(len(test_non_iid[0])))
+
 train_data_size_per_client = len(train_loader[0])
 test_data_size_per_client = len(test_loader[0])
 
 epochs = args.epochs
 batch_size = args.batch_size
+
 train_iteration = train_data_size_per_client
 trainer.train_iteration = train_iteration
 trainer.batch_size = batch_size
-
+trainer.test_non_iid = test_non_iid
+trainer.client_class_dic = client_class_dic
+trainer.class_client_dic = class_client_dic
+trainer.broadcaster = broadcaster
 trainer.set_test_loader(test_all)
 
 client_dic = {}
@@ -114,10 +122,13 @@ broadcaster.initialize()
 
 name = None if args.name == '' else args.name
 
-wandb.init(project="dfl2",
-           entity="kyriegyj",
-           name=name,
-           config=args)
+args.turn_on_wandb = True
+
+if args.turn_on_wandb:
+    wandb.init(project="dfl3",
+               entity="kyriegyj",
+               name=name,
+               config=args)
 
 ###############################
 # 1 communication per E epoch #
@@ -129,13 +140,18 @@ for rounds in range(args.comm_round):
     # 在本地数据集上测试
     trainer.local_test()
     # 在全局数据集上测试
-    trainer.overall_test()
+    # trainer.overall_test()
+    # 在每个类包含的标签的测试数据上测试
+    trainer.non_iid_test()
     print("-----第{}轮训练结束-----".format(rounds))
-wandb.finish()
 
 # 9、保存模型
-client_model_dic = {}
-for id in client_dic:
-    client = client_dic[id]
-    client_model_dic[id] = client.model
-torch.save(client_model_dic, "./model/{:s}_client_dic".format(name))
+if args.turn_on_wandb:
+    client_model_dic = {}
+    for id in client_dic:
+        client = client_dic[id]
+        client_model_dic[id] = client.model
+    torch.save(client_model_dic, "./model/{:s}_client_dic".format(name))
+
+if args.turn_on_wandb:
+    wandb.finish()

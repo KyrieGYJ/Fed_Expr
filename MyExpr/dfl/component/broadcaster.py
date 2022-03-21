@@ -20,6 +20,7 @@ class Broadcaster(object):
         if self.strategy == "affinity":
             # 初始化权重矩阵，不连通的边用-1填充
             client_dic = self.recorder.client_dic
+            # todo 初始化有问题
             self.p = [[1 for _ in client_dic] for _ in client_dic]
             self.w = [[1 for _ in client_dic] for _ in client_dic]
             for c_id in client_dic:
@@ -49,7 +50,7 @@ class Broadcaster(object):
                 # print("{:d} 发送到 {:d}".format(sender_id, receiver_id))
                 self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id])
                 num += 1
-        print("client {} has {} neighbors".format(sender_id, num))
+        # print("client {} has {} neighbors".format(sender_id, num))
 
     def affinity(self, sender_id, model):
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
@@ -65,6 +66,7 @@ class Broadcaster(object):
         candidate = []
         # 计算累计的affinity，如果本回合没收到，沿用上回合的
         # 这个策略可能有点粗暴，但是可以有效保证每次必然会发出固定数量，可能后续要改进
+
         for neighbor_id in range(len(sender_p_metric)):
             # 排除掉不存在的连接
             if neighbor_id == sender_id or sender_p_metric[neighbor_id] == -1:
@@ -72,11 +74,15 @@ class Broadcaster(object):
             # 上一轮收到了neighbor_id的模型
             if neighbor_id in new_w:
                 sender_p_metric[neighbor_id] += new_w[neighbor_id]
+                # 更新权重w的缓存
                 sender_w_metric[neighbor_id] = new_w[neighbor_id]
             else:
+                # 本轮没收到则沿用上回的w更新p矩阵
                 sender_p_metric[neighbor_id] += sender_w_metric[neighbor_id]
             candidate.append(neighbor_id)
         top_15 = heapq.nlargest(15, candidate, lambda x: sender_p_metric[x])
+        losses = [sender_p_metric[idx] for idx in top_15]
+        # print("client {} top15 is {}, their loss are {} respectively and new_w are {}".format(sender_id, top_15, losses, new_w))
         for receiver_id in top_15:
             self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id])
 
@@ -89,3 +95,4 @@ class Broadcaster(object):
         receiver.response(sender_id)
         receiver.received_model_dict[sender_id] = model
         receiver.received_topology_weight_dict[sender_id] = topology_weight
+

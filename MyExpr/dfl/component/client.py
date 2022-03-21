@@ -89,11 +89,18 @@ class Client(object):
         self.optimizer.zero_grad()
         total_loss, total_correct = 0.0, 0.0
         total_KLD_loss = 0.0
+        total_local_loss = 0.0
         iteration = 0
         for idx, (train_X, train_Y) in enumerate(self.train_loader):
             train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
             local_outputs = self.model(train_X)
             local_loss = self.criterion_CE(local_outputs, train_Y)
+
+            if "cuda" in self.args.device:
+                local_loss = local_loss.cpu()
+
+            total_local_loss += local_loss.item()
+
             pred = local_outputs.argmax(dim=1)
             correct = pred.eq(train_Y.view_as(pred)).sum()
 
@@ -101,8 +108,13 @@ class Client(object):
             for neighbor_id in self.received_model_dict.keys():
                 neighbor_model = self.received_model_dict[neighbor_id]
                 neighbor_outputs = neighbor_model(train_X)
-                KLD_loss += self.criterion_KLD(self.LogSoftmax(local_outputs),
-                                               self.Softmax(neighbor_outputs.detach())).item()
+                kld_loss = self.criterion_KLD(self.LogSoftmax(local_outputs),
+                                               self.Softmax(neighbor_outputs.detach()))
+                if "cuda" in self.args.device:
+                    kld_loss = kld_loss.cpu()
+
+                KLD_loss += kld_loss.item()
+
             if len(self.received_model_dict) > 0:
                 KLD_loss = KLD_loss / len(self.received_model_dict)
                 local_loss += KLD_loss
@@ -119,8 +131,9 @@ class Client(object):
         if iteration > 0:
             total_KLD_loss /= iteration
 
-        print("client {} 的平均互学习KL散度为:{}".format(self.client_id, total_KLD_loss))
+        # print("client {} 的平均互学习KL散度为:{}, local_loss为:{}".format(self.client_id, total_KLD_loss, total_local_loss))
         return total_loss, total_correct
+
 
     # 采用dsgd模型插值进行协同更新
     def model_interpolation_update(self):
@@ -142,7 +155,7 @@ class Client(object):
         for c_id, loss in topK:
             selected_weight_dict[c_id] = self.received_model_dict[c_id]
         self.received_model_dict = selected_weight_dict
-        print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
+        # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
 
     # 广播模块
     def broadcast(self):
@@ -162,11 +175,6 @@ class Client(object):
             if "cuda" in self.device:
                 loss = loss.cpu()
             return loss.detach().numpy(), correct
-
-
-
-
-
 
 
 

@@ -15,6 +15,8 @@ class TopKSelector(object):
         print(description.format(indicator))
         if indicator == "loss":
             self.select = self.top_k_by_loss_epoch_wise
+        elif indicator == "no":
+            self.select = self.no_top_k
 
     def register_recoder(self, recorder):
         self.recorder = recorder
@@ -46,7 +48,10 @@ class TopKSelector(object):
         top_k = heapq.nlargest(10, heap, lambda x: -x[1])
         return top_k
 
-    # todo 该f1筛选法
+    def no_top_k(self):
+        pass
+
+    # todo 改f1筛选法
 
     def top_k_by_f1_marco(self, train_X, train_Y, host):
         heap = []

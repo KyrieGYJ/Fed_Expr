@@ -82,4 +82,8 @@ def add_args():
     parser.add_argument('--local_train_stop_point', type=int, default=99999999,
                         help="communication round where local train stop")
 
+    # debug
+    parser.add_argument('--turn_on_wandb', type=bool, default=True,
+                        help="communication round where local train stop")
+
     return parser

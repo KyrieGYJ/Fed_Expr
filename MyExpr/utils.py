@@ -60,15 +60,25 @@ def cal_w(client, args):
         for data, label in val_dataloader:
             data, label = data.to(args.device), label.to(args.device)
             local_outputs = local_model(data)
-            total_local_loss += criterion(local_outputs, label).item()
+            local_loss = criterion(local_outputs, label)
+
+            if "cuda" in args.device:
+                local_loss = local_loss.cpu()
+
+            total_local_loss += local_loss.item()
 
             for c_id, model in received_dic.items():
                 received_outputs = model(data)
-                loss_dic[c_id] += criterion(received_outputs, label).item()
+                received_loss = criterion(received_outputs, label)
+
+                if "cuda" in args.device:
+                    received_loss = received_loss.cpu()
+
+                loss_dic[c_id] += received_loss.item()
 
     for c_id, model in received_dic.items():
         # 计算分母
-        dif = CalDif(local_model, model)
+        dif = CalDif(local_model, model, args)
         w[c_id] = ((total_local_loss - loss_dic[c_id]) / dif)
 
     # 这个写法会慢很多
@@ -109,14 +119,19 @@ def cal_w(client, args):
     return w
 
 
-def CalDif(model1, model2):
+def CalDif(model1, model2, args):
     # 利用矩阵范数求模型间的差异
     # 比较粗糙的方式
     # 或者在算loss的时候，顺便把准确率算出来，作为模型间差异
     dif = 0
     with torch.no_grad():
         for item1, item2 in zip(list(model1.parameters()), list(model2.parameters())):
-            dif += torch.norm(item1 - item2)
+            para_dif = torch.norm(item1 - item2)
+
+            if "cuda" in args.device:
+                para_dif = para_dif.cpu()
+
+            dif += para_dif
     return dif
 
 

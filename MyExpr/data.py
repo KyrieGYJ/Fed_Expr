@@ -113,6 +113,8 @@ class Data(object):
         self.args = args
         self.train_data, self.test_data = Dataset(args)
         self.train_all, self.test_all, self.train_loader, self.test_loader = None, None, None, None
+        self.client_class_dic = {}
+        self.class_client_dic = {}
         self.generate_loader = None
         if args.data_distribution == "iid":
             self.generate_loader = self.iid
@@ -130,12 +132,22 @@ class Data(object):
                                                        rand_set_all=[], args=args)
         dict_users_test, rand_set_all = self.client_noniid(test_data, args.client_num_in_total, args.shards_per_user,
                                                       rand_set_all=rand_set_all, args=args)
+        dic_test_data = self.data_per_label(test_data)
 
         client_train_dataset = []
         client_validation_dataset = []
+
+        # 划分validation
         for ix in dict_users_train:
             client_dataset = torch.utils.data.Subset(train_data, indices=dict_users_train[ix])
-            print("client[{}] 包含的类为:{}".format(ix, np.unique(torch.tensor(train_data.targets)[dict_users_train[ix]])))
+            self.client_class_dic[ix] = np.unique(torch.tensor(train_data.targets)[dict_users_train[ix]])
+
+            for label in self.client_class_dic[ix]:
+                if label not in self.class_client_dic:
+                    self.class_client_dic[label] = []
+                self.class_client_dic[label].append(ix)
+
+            print("client[{}] 包含的类为:{}".format(ix, self.client_class_dic[ix]))
             # 划分validation
             len_train_split = int(np.round(args.train_split * len(client_dataset)))
             len_val_split = len(client_dataset) - len_train_split
@@ -149,7 +161,7 @@ class Data(object):
             client_validation_dataset.append(datasets[1])
 
         # client_dataset = [torch.utils.data.Subset(train_data, indices=dict_users_train[ix]) for ix in dict_users_train]
-        client_test_dataset = [torch.utils.data.Subset(test_data, indices=dict_users_test[ix]) for ix in dict_users_train]
+        client_test_dataset = [torch.utils.data.Subset(test_data, indices=dict_users_test[ix]) for ix in dict_users_test]
 
 
         self.train_loader = [DataLoader(client_train_dataset[i], batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -161,8 +173,24 @@ class Data(object):
         self.test_loader = [DataLoader(client_test_dataset[i], batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
                              for i in dict_users_train]
 
-        self.train_all = DataLoader(train_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-        self.test_all = DataLoader(train_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        self.train_all = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+        self.test_all = DataLoader(test_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+
+
+        # for idx, ix in enumerate(dic_test_data):
+        #     print("idx: {} ix : {}".format(idx, ix))
+
+        class_test_dataset = [None for _ in range(len(dic_test_data))]
+        for ix in dic_test_data:
+            # print("ix : {}, targets : {}".format(ix, test_data.targets[dic_test_data[ix][0]]))
+            class_test_dataset[ix] = torch.utils.data.Subset(test_data, indices=dic_test_data[ix])
+
+        # class_test_dataset的下标和标签并没有对应
+        # class_test_dataset = [torch.utils.data.Subset(test_data, indices=dic_test_data[ix]) for ix in dic_test_data]
+
+        # print("length of dic_test_data[0] : {}".format(len(dic_test_data[0])))
+        self.test_non_iid = [DataLoader(class_test_dataset[i], batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers) for i in range(len(dic_test_data))]
+
 
         # emd = []
         # for ix in dict_users_train:
@@ -209,6 +237,17 @@ class Data(object):
                             for i in range(args.client_num_in_total)]
         # self.test_loader = DataLoader(testset, batch_size=args.batchsize, shuffle=False, num_workers=args.num_workers)
 
+    # 将dataset中的数据（下标）放入字典 {label : index}
+    def data_per_label(self, dataset):
+        idxs_dic = {}
+
+        for i in range(len(dataset)):
+            label = torch.tensor(dataset.targets[i]).item()
+            if label not in idxs_dic.keys():
+                idxs_dic[label] = []
+            idxs_dic[label].append(i)
+        return idxs_dic
+
     def client_noniid(self, dataset, num_users, shard_per_user, rand_set_all, args):
         """
         Sample non-IID client data from dataset in pathological manner - from LG-FedAvg implementation
@@ -221,14 +260,15 @@ class Data(object):
         seed = args.data_seed
         dict_users = {i: np.array([], dtype='int64') for i in range(num_users)}
 
-        idxs_dict = {}
 
-        # 将dataset中的数据（下标）放入字典
-        for i in range(len(dataset)):
-            label = torch.tensor(dataset.targets[i]).item()
-            if label not in idxs_dict.keys():
-                idxs_dict[label] = []
-            idxs_dict[label].append(i)
+        idxs_dict = self.data_per_label(dataset)
+
+        # 将dataset中的数据（下标）放入字典 {label : index}
+        # for i in range(len(dataset)):
+        #     label = torch.tensor(dataset.targets[i]).item()
+        #     if label not in idxs_dict.keys():
+        #         idxs_dict[label] = []
+        #     idxs_dict[label].append(i)
 
         # 统计标签种类
         num_classes = len(np.unique(dataset.targets))
@@ -286,3 +326,5 @@ class Data(object):
         assert (len(set(list(test))) == len(dataset))
 
         return dict_users, rand_set_all
+
+
