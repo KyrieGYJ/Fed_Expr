@@ -1,5 +1,6 @@
 import argparse
 
+
 def add_args():
     parser = argparse.ArgumentParser(description='DFL-Mutual-standalone')
     # Training settings
@@ -37,6 +38,9 @@ def add_args():
     parser.add_argument('--client_num_in_total', type=int, default=10, metavar='NN',
                         help='number of workers in a distributed cluster')
 
+    parser.add_argument('--num_clients_per_dist', type=int, default=15,
+                        help="the number of client of each distribution in latent non-iid manner")
+
     parser.add_argument('--topology_neighbors_num_undirected', type=int, default=20)
 
     parser.add_argument('--topology_neighbors_num_directed', type=int, default=0)
@@ -69,13 +73,21 @@ def add_args():
                         help='name of current run')
 
     parser.add_argument('--data_distribution', type=str, default='iid',
-                        help='iid, non-iid')
+                        help='iid, non-iid_pathological, non-iid_latent')
 
     parser.add_argument('--data_seed', type=int, default=0, help="data seed")
 
+    parser.add_argument('--num_classes', type=int, default=10)
+
+    # 兼容fedfomo的latent-non-iid
+    parser.add_argument('--seed', default=0, type=int, help="Random seed (default 0)")
+
     parser.add_argument('--shards_per_user', type=int, default=2, help="2, 3, 4, 5, 10")
 
-    parser.add_argument('--train_split', type=float, default=0.8, help="训练数据集比例")
+    # latent-non-iid中的分布数量
+    parser.add_argument('--num_distributions', type=int, default=5, help="2, 3, 4, 5, 10")
+
+    parser.add_argument('--train_split', type=float, default=0.9, help="训练数据集比例")
 
     parser.add_argument('--communication_wise', type=str, default='epoch', help="iteration, epoch")
 

@@ -1,10 +1,10 @@
 import numpy as np
 from collections import Counter
 import heapq
-
+import seaborn as sns
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
-
 
 # report the average Earth Mover’s Distance (EMD) between local client data and the total dataset
 # across all clients to quantify non-IIDness.
@@ -33,6 +33,7 @@ def compute_emd(targets_1, targets_2):
     return emd
 
 
+# 计算模型之间的权重(参考ICLR FedFomo)
 def cal_w(client, args):
     """
     计算本地模型与其他模型的权重
@@ -81,32 +82,6 @@ def cal_w(client, args):
         dif = CalDif(local_model, model, args)
         w[c_id] = ((total_local_loss - loss_dic[c_id]) / dif)
 
-    # 这个写法会慢很多
-    # for c_id, model in received_dic.items():
-    #     # 两个模型loss
-    #     loss1 = 0.0
-    #     loss2 = 0.0
-    #
-    #     # f为验证数据集的大小
-    #     # 简单的确定合适的验证数据集大小
-    #     f = 0
-    #     with torch.no_grad():
-    #         # eNet.load_state_dict(para, strict=True)
-    #
-    #         for data, label in val_dataloader:
-    #             data, label = data.to(args.device), label.to(args.device)
-    #             # # 自己设置，大概10%-40%
-    #             # # 这是超参数
-    #             # if f == 10:
-    #             #     break
-    #             # f += 1
-    #             # data, label = data.to(self.dev), label.to(self.dev)
-    #             preds1 = local_model(data)
-    #             preds2 = model(data)
-    #
-    #             loss1 += criterion(preds1, label).item()
-    #             loss2 += criterion(preds2, label).item()
-
         # # 计算分母
         # dif = CalDif(local_model, model)
         # # if loss1 <= loss2:
@@ -119,12 +94,14 @@ def cal_w(client, args):
     return w
 
 
+# 计算模型之间的欧式距离
 def CalDif(model1, model2, args):
     # 利用矩阵范数求模型间的差异
     # 比较粗糙的方式
     # 或者在算loss的时候，顺便把准确率算出来，作为模型间差异
     dif = 0
     with torch.no_grad():
+        # model.parameters返回的是迭代器，model.state_dict返回的是参数字典
         for item1, item2 in zip(list(model1.parameters()), list(model2.parameters())):
             para_dif = torch.norm(item1 - item2)
 
@@ -135,42 +112,35 @@ def CalDif(model1, model2, args):
     return dif
 
 
-def getName(args):
-    name = ""
-    if args.model == "BaseConvNet":
-        name = "BCN"
-    else:
-        name = args.model
-    name += "-"+args.client_num_in_total+"c"
-    name += "-"+str(args.topology_neighbors_num_undirected)+"n"
-    name += "-"+str(args.epochs)+"e"
-    name += "-"+args.broadcaster_strategy
-    if args.local_train_stop_point <= args.comm_round:
-        name += "-"+str(args.local_train_stop_point)+"stop"
-    return name
+# 根据二维矩阵生成热力图
+def generate_heatmap(matrix, path):
+    # 显示数值 square=True, annot=True
+    plt.matshow(matrix, cmap=plt.cm.rainbow, vmin=0, vmax=1)
+    plt.colorbar()
+    # plt.show()
+    # sns.heatmap(matrix, vmin=0, vmax=1, center=0.5)
+    # # heatmap.get_figure().savefig(path, dpi=600)
+    # print("===========用plt绘制")
+    plt.savefig(path, dpi=600)
+    plt.close()
+
+# def getName(args):
+#     name = ""
+#     if args.model == "BaseConvNet":
+#         name = "BCN"
+#     else:
+#         name = args.model
+#     name += "-"+args.client_num_in_total+"c"
+#     name += "-"+str(args.topology_neighbors_num_undirected)+"n"
+#     name += "-"+str(args.epochs)+"e"
+#     name += "-"+args.broadcaster_strategy
+#     if args.local_train_stop_point <= args.comm_round:
+#         name += "-"+str(args.local_train_stop_point)+"stop"
+#     return name
 
 
-# # 大根堆
-# 实现的有问题，不会实现
-# class MaxHeap(object):
-#
-#     def __init__(self, size):
-#         self.data = []
-#         self.size = size
-#
-#     def push(self, e):
-#         loss = e[1]
-#         if len(self.data) < self.size:
-#             heapq.heappush(self.data, e)
-#         else:
-#             peek = heapq.heappop(self.data)
-#             if loss < -peek[1]:
-#                 heapq.heappush(self.data, [e[0], -loss])
-#             else:
-#                 heapq.heappush(self.data, peek)
-#
-#     def pop(self):
-#         return -heapq.heappop(self.data)
-#
-#     def __len__(self):
-#         return len(self.data)
+def print_debug(stdout, prefix=''):
+    DEBUG = True
+    if DEBUG:
+        print(f'DEBUG - {prefix}: {stdout}')
+

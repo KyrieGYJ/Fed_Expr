@@ -1,10 +1,16 @@
 from MyExpr.utils import cal_w
 import heapq
+import numpy as np
+import torch
+import copy
+
+from MyExpr.utils import generate_heatmap
 
 class Broadcaster(object):
 
-    def __init__(self):
+    def __init__(self, args):
         # neighbors_weight_dict
+        self.args = args
         self.receive = None
         self.send = None
         self.recorder = None
@@ -12,6 +18,11 @@ class Broadcaster(object):
         # affinity metrics策略用用到
         self.p = None
         self.w = None
+        self.use(args.broadcaster_strategy)
+
+        # 记录客户之间的通信频率
+        self.broadcast_freq = None
+
 
     def register_recorder(self, recorder):
         self.recorder = recorder
@@ -20,15 +31,15 @@ class Broadcaster(object):
         if self.strategy == "affinity":
             # 初始化权重矩阵，不连通的边用-1填充
             client_dic = self.recorder.client_dic
-            # todo 初始化有问题
-            self.p = [[1 for _ in client_dic] for _ in client_dic]
-            self.w = [[1 for _ in client_dic] for _ in client_dic]
+            self.p = [[torch.tensor(1.) for _ in client_dic] for _ in client_dic]
+            self.w = [[torch.tensor(1.) for _ in client_dic] for _ in client_dic]
             for c_id in client_dic:
                 topology = self.recorder.topology_manager.get_symmetric_neighbor_list(c_id)
                 for neighbor_id in client_dic:
                     if topology[neighbor_id] == 0 or neighbor_id == c_id:
-                        self.p[c_id][neighbor_id] = -1
-                        self.w[c_id][neighbor_id] = -1
+                        self.p[c_id][neighbor_id] = torch.tensor(0.)
+                        self.w[c_id][neighbor_id] = torch.tensor(0.)
+        self.broadcast_freq = np.zeros([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64)
 
     def use(self, strategy):
         description = "Broadcaster use strategy:{:s}"
@@ -53,7 +64,6 @@ class Broadcaster(object):
         # print("client {} has {} neighbors".format(sender_id, num))
 
     def affinity(self, sender_id, model):
-        topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         # 第一轮全发，避免后续出现差错
         if self.recorder.rounds == 0:
             self.flood(sender_id, model)
@@ -64,12 +74,14 @@ class Broadcaster(object):
         sender_p_metric = self.p[sender_id]
         sender_w_metric = self.w[sender_id]
         candidate = []
+
         # 计算累计的affinity，如果本回合没收到，沿用上回合的
         # 这个策略可能有点粗暴，但是可以有效保证每次必然会发出固定数量，可能后续要改进
-
+        topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for neighbor_id in range(len(sender_p_metric)):
             # 排除掉不存在的连接
-            if neighbor_id == sender_id or sender_p_metric[neighbor_id] == -1:
+            # if neighbor_id == sender_id or sender_p_metric[neighbor_id] == -1:
+            if neighbor_id == sender_id or topology[neighbor_id] == 0:
                 continue
             # 上一轮收到了neighbor_id的模型
             if neighbor_id in new_w:
@@ -81,10 +93,42 @@ class Broadcaster(object):
                 sender_p_metric[neighbor_id] += sender_w_metric[neighbor_id]
             candidate.append(neighbor_id)
         top_15 = heapq.nlargest(15, candidate, lambda x: sender_p_metric[x])
-        losses = [sender_p_metric[idx] for idx in top_15]
+        # losses = [sender_p_metric[idx] for idx in top_15]
         # print("client {} top15 is {}, their loss are {} respectively and new_w are {}".format(sender_id, top_15, losses, new_w))
         for receiver_id in top_15:
             self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id])
+
+    def get_p_heatmap(self, path):
+        if self.strategy == "flood":
+            return
+        epsilon = 1e-6
+        n = self.args.client_num_in_total
+        p_list = np.zeros([n, n], dtype=np.float64)
+        # print(self.p)
+        for c_id_from in range(n):
+            for c_id_to in range(n):
+                p_list[c_id_from][c_id_to] = self.p[c_id_from][c_id_to].item()
+                # print(type(p_list[c_id_from][c_id_to]))
+        # 为了确保自身到自身的权重被忽略掉，直接赋值为最低值
+        # 不能取最低值，因为最低值一直是零，所以应该取最大值，表示到自己的权重是最大的。
+        for c_id in range(n):
+            p_list[c_id][c_id] = p_list.max()
+        p_list = (p_list - p_list.min()) / (p_list.max() - p_list.min() + epsilon)
+        # print(p_list)
+        print("绘制权重热力图")
+        generate_heatmap(p_list, path)
+
+    def get_freq_heatmap(self, path):
+        if self.strategy == "flood":
+            return
+        epsilon = 1e-6
+        n = self.args.client_num_in_total
+        freq = copy.deepcopy(self.broadcast_freq)
+        for c_id in range(n):
+            freq[c_id][c_id] = freq.max()
+        freq = (freq - freq.min()) / (freq.max() - freq.min() + epsilon)
+        print("绘制通信频率热力图")
+        generate_heatmap(freq, path)
 
     ###############
     #   接收方法   #
@@ -95,4 +139,5 @@ class Broadcaster(object):
         receiver.response(sender_id)
         receiver.received_model_dict[sender_id] = model
         receiver.received_topology_weight_dict[sender_id] = topology_weight
+        self.broadcast_freq[sender_id][receiver_id] += 1
 

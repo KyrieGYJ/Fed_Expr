@@ -91,6 +91,7 @@ class Client(object):
         total_KLD_loss = 0.0
         total_local_loss = 0.0
         iteration = 0
+        print(f"client[{self.client_id}]共{len(self.received_model_dict)}个client互学习参与")
         for idx, (train_X, train_Y) in enumerate(self.train_loader):
             train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
             local_outputs = self.model(train_X)
@@ -151,6 +152,8 @@ class Client(object):
 
     def select_topK_epoch_wise(self):
         topK = self.topK_selector.select(self)
+        if topK is None:
+            return
         selected_weight_dict = {}
         for c_id, loss in topK:
             selected_weight_dict[c_id] = self.received_model_dict[c_id]
@@ -162,7 +165,8 @@ class Client(object):
         self.broadcaster.send(self.client_id, self.model)
 
     def response(self, sender_id):
-        logging.info("client[{:d}]:收到来自client[{:d}]的广播".format(self.client_id, sender_id))
+        # logging.info("client[{:d}]:收到来自client[{:d}]的广播".format(self.client_id, sender_id))
+        pass
 
     def test(self, test_X, test_Y):
         with torch.no_grad():

@@ -46,13 +46,23 @@ class Snapshot(object):
 
 class Recorder(object):
 
-    def __init__(self, client_dic, topology_manager, args):
+    def __init__(self, client_dic, topology_manager, trainer, broadcaster, topK_selector, args):
+        # 全局变量
         self.client_dic = client_dic
         self.topology_manager = topology_manager
         self.args = args
-
         self.epoch = 0
+        self.trainer = trainer
+        self.broadcaster = broadcaster
+        self.topK_selector = topK_selector
+
+        trainer.register_recorder(self)
+        broadcaster.register_recorder(self)
+        topK_selector.register_recoder(self)
+
+        # decrapted
         self.iteration = 0
+
         self.cur_snapshot = Snapshot(self)
         self.train_history_per_iteration = []
         self.train_history_per_epoch = []

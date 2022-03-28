@@ -5,21 +5,17 @@ import wandb
 import os
 import sys
 
+import numpy as np
+
+
 # 添加环境
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../FedML")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../")))
 
-print(sys.path)
-
 from fedml_api.standalone.decentralized.topology_manager import TopologyManager
 
-from MyExpr.dfl.model.resnet import resnet18
-from MyExpr.dfl.model.resnet import resnet34
-from MyExpr.dfl.model.resnet import resnet50
-from MyExpr.dfl.model.resnet import resnet101
-from MyExpr.dfl.model.resnet import resnet152
-from MyExpr.dfl.model.cnn import BaseConvNet
+from MyExpr.dfl.model.model_builder import get_model_builder
 from MyExpr.dfl.Args import add_args
 from MyExpr.dfl.component.client import Client
 from MyExpr.dfl.component.top_k import TopKSelector
@@ -28,85 +24,64 @@ from MyExpr.dfl.component.trainer import Trainer
 from MyExpr.dfl.component.recorder import Recorder
 from MyExpr.data import Data
 
+from MyExpr.utils import compute_emd
+from MyExpr.utils import generate_heatmap
+
+# 固定种子后，deter设置为true能固定每次结果相同
+# torch.backends.cudnn.deterministic = True
+# cuda自动优化，重复同样网络会变快，反复修改网络会变慢
+# torch.backends.cudnn.benchmark = False
+
 parser = add_args()
 args = parser.parse_args()
-
-# 查看GPU
-print(torch.cuda.is_available())
-for i in range(torch.cuda.device_count()):
-    print("GPU[{:d}]: {:s}".format(i, torch.cuda.get_device_name(i)))
-
-print("当前模式：{}".format(args.communication_wise))
-# 选择GPU
-# os.environ['CUDA_VISIBLE_DEVICES'] = "0"
-
-# 设置component，只表示策略，都是单例
-# 1、设置trainer策略
 trainer = Trainer(args)
-trainer.use(args.trainer_strategy)
-# 2、设置broadcaster策略
-broadcaster = Broadcaster()
-broadcaster.use(args.broadcaster_strategy)
-# 3、设置Top_K策略
+print("初始化trainer完成")
+broadcaster = Broadcaster(args)
+print("初始化broadcaster完成")
 topK_selector = TopKSelector(args)
-topK_selector.use(args.topK_strategy)
-# 4、初始化拓扑结构
+print("初始化topK_selector完成")
 client_num_in_total = args.client_num_in_total
+print(f"总共{client_num_in_total}个client进行试验")
+print("初始化component...完成")
+# 初始化拓扑结构
+print("**********generating topology**********")
 topology_manager = TopologyManager(client_num_in_total, True,
                                    undirected_neighbor_num=args.topology_neighbors_num_undirected)
 topology_manager.generate_topology()
-print("finished topology generation")
-
-print("Data:", os.path.abspath(os.path.join(os.getcwd(), args.data_dir)))
+print("**********finishing topology generation**********")
 
 # 5、加载数据集，划分
 data = Data(args)
 data.generate_loader()
-train_loader, validation_loader, test_loader, test_all = data.train_loader, data.validation_loader, data.test_loader, data.test_all
-test_non_iid, client_class_dic, class_client_dic= data.test_non_iid, data.client_class_dic, data.class_client_dic
-# print("length of test_all: {}".format(len(test_all)))
-# print("length of test_non_iid: {}".format(len(test_non_iid[0])))
 
-train_data_size_per_client = len(train_loader[0])
-test_data_size_per_client = len(test_loader[0])
+trainer.test_loader = data.test_all
 
-epochs = args.epochs
-batch_size = args.batch_size
-
-train_iteration = train_data_size_per_client
-trainer.train_iteration = train_iteration
-trainer.batch_size = batch_size
-trainer.test_non_iid = test_non_iid
-trainer.client_class_dic = client_class_dic
-trainer.class_client_dic = class_client_dic
-trainer.broadcaster = broadcaster
-trainer.set_test_loader(test_all)
+# 临时这么写方便，todo 后续有需要再改
+if args.data_distribution == "non-iid_pathological":
+    test_non_iid, client_class_dic, class_client_dic= data.test_non_iid, data.client_class_dic, data.class_client_dic
+    # print("length of test_all: {}".format(len(test_all)))
+    # print("length of test_non_iid: {}".format(len(test_non_iid[0])))
+    # todo 这一堆初始化都要改掉
+    trainer.test_non_iid = data.test_non_iid
+    trainer.client_class_dic = data.client_class_dic
+    trainer.class_client_dic = data.class_client_dic
+elif args.data_distribution == "non-iid_latent":
+    # 加载出non-iid数据字典
+    trainer.dist_client_dict = data.dist_client_dict
+    trainer.test_non_iid = data.test_non_iid
 
 client_dic = {}
-# 6、注册recorder
-print("注册recorder")
-recorder = Recorder(client_dic, topology_manager, args)
-trainer.register_recorder(recorder)
-broadcaster.register_recorder(recorder)
-topK_selector.register_recoder(recorder)
+print("初始化recorder...", end="")
+recorder = Recorder(client_dic, topology_manager, trainer, broadcaster, topK_selector, args)
+print("完毕")
 
-model_builder = resnet18
 # 选择网络
-if args.model == "resnet18":
-    model_builder = resnet18
-elif args.model == "resnet34":
-    model_builder = resnet34
-elif args.model == "resnet50":
-    model_builder = resnet50
-elif args.model == "resnet101":
-    model_builder = resnet101
-elif args.model == "resnet152":
-    model_builder = resnet152
-elif args.model == "BaseConvNet":
-    model_builder = BaseConvNet
+model_builder = get_model_builder(args)
+print(f"采用网络{args.model}进行试验")
 
 # 7、初始化client, 选择搭载模型等
-print("初始化clients")
+print("初始化clients...", end="")
+train_loader, validation_loader, test_loader = data.train_loader, data.validation_loader, data.test_loader
 for c_id in range(client_num_in_total):
     # "ResNet18_GN"
     model = model_builder(num_classes=10)
@@ -116,16 +91,42 @@ for c_id in range(client_num_in_total):
     # 方便更换策略
     c.register(topK_selector=topK_selector, recorder=recorder, broadcaster=broadcaster)
     client_dic[c_id] = c
-print("初始化clients完毕")
+print("完毕")
 
 broadcaster.initialize()
 
 name = None if args.name == '' else args.name
 
-args.turn_on_wandb = True
+# 计算client数据之间的emd热力图
+emd_list = np.zeros([client_num_in_total, client_num_in_total], dtype = np.float64)
+train_data = data.train_data
+train_idx_dict = data.train_idx_dict
+epsilon = 1e-10
+for c_id_from in range(client_num_in_total):
+    for c_id_to in range(client_num_in_total):
+        # if c_id_from == c_id_to:
+        #     emd_list[c_id_from][c_id_to] = 0
+        #     continue
+        train_data_from = [train_data.targets[x] for x in train_idx_dict[c_id_from]]
+        train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
+        emd = compute_emd(train_data_from, train_data_to)
+        # emd_list[c_id_from][c_id_to] = 1 / (emd + epsilon)
+        emd_list[c_id_from][c_id_to] = emd
+# print(emd_list.shape)
+# emd_list = emd_list - emd_list.min() / (emd_list.max() - emd_list.min())
+
+emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)
+for c_id in range(client_num_in_total):
+    emd_list[c_id][c_id] = 0
+# print(emd_list)
+if not os.path.exists(f'./heatmap/{name}'):
+    os.makedirs(f'./heatmap/{name}')
+generate_heatmap(emd_list, f"./heatmap/{name}/emd_heatmap2")
+
+args.turn_on_wandb = False
 
 if args.turn_on_wandb:
-    wandb.init(project="dfl3",
+    wandb.init(project="dfl4",
                entity="kyriegyj",
                name=name,
                config=args)
@@ -140,10 +141,16 @@ for rounds in range(args.comm_round):
     # 在本地数据集上测试
     trainer.local_test()
     # 在全局数据集上测试
-    # trainer.overall_test()
+    trainer.overall_test()
     # 在每个类包含的标签的测试数据上测试
     trainer.non_iid_test()
+    # 打印权重热力图（如果采用聚类广播算法）
+    broadcaster.get_p_heatmap(f"./heatmap/{name}/weight_{rounds}")
+    # 打印通信频率热力图
+    broadcaster.get_freq_heatmap(f"./heatmap/{name}/freq_{rounds}")
+
     print("-----第{}轮训练结束-----".format(rounds))
+
 
 # 9、保存模型
 if args.turn_on_wandb:

@@ -9,6 +9,7 @@ class TopKSelector(object):
         self.recorder = None
         self.select = None
         self.args = args
+        self.use(args.topK_strategy)
 
     def use(self, indicator):
         description = "TopKSelector use strategy:{:s}"
@@ -48,7 +49,7 @@ class TopKSelector(object):
         top_k = heapq.nlargest(10, heap, lambda x: -x[1])
         return top_k
 
-    def no_top_k(self):
+    def no_top_k(self, host):
         pass
 
     # todo 改f1筛选法
