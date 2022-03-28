@@ -4,6 +4,7 @@ from MyExpr.dfl.model.resnet import resnet50
 from MyExpr.dfl.model.resnet import resnet101
 from MyExpr.dfl.model.resnet import resnet152
 from MyExpr.dfl.model.cnn import BaseConvNet
+from MyExpr.dfl.model.cnn import FedAvgCNN
 
 def get_model_builder(args):
     model_builder = resnet18
@@ -19,4 +20,6 @@ def get_model_builder(args):
         model_builder = resnet152
     elif args.model == "BaseConvNet":
         model_builder = BaseConvNet
+    elif args.model == "FedAvgCNN":
+        model_builder = FedAvgCNN
     return model_builder
