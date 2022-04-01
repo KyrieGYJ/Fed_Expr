@@ -47,7 +47,11 @@ nohup bash run.sh 0.01 "BaseConvNet" 1 64  100 "cuda:1" "local_and_mutual" "loss
 #rm BCN_50n_aff_30stop.log
 #rm BCN_100n_aff_30stop.log
 
-bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "loss" "affinity" "non-iid_pathological" 1 20 999 "BCN_20n_aff"
+bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_latent2" 2 15 999 "test2"
+
+bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_baseline" "non-iid_latent2" 20 15 999 "test4"
+
+bash run.sh 0.01 "BaseConvNet" 5 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_cluster" "non-iid_latent2" 20 15 999 "test3"
 
 # baseline
 # local
@@ -64,7 +68,7 @@ nohup bash run.sh 0.01 "BaseConvNet" 1 64  10 "cuda:1" "fedavg" "loss" "affinity
 nohup bash run.sh 0.01 "BaseConvNet" 1 64  100 "cuda:3" "local" "loss" "affinity" "non-iid_latent" 60 100 30 "BCN_100c_local" > log/BCN_100c_local_latent.log 2>&1 &
 
 # 3.25
-nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "loss" "affinity" "non-iid_latent" 80 100 999 "BCN_100n_aff_latent" > log/BCN_100n_aff_latent.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "loss" "affinity" "non-iid_latent" 60 100 999 "BCN_100n_aff_latent" > log/BCN_100n_aff_latent.log 2>&1 &
 
 nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "loss" "flood" "non-iid_latent" 80 100 999 "BCN_100n_flood_latent" > log/BCN_100n_flood_latent.log 2>&1 &
 
@@ -85,3 +89,18 @@ nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "no" "
 
 nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "no" "flood" "non-iid_pathological" 80 100 999 "flood_no_topk_pathological" > log/flood_no_topk_pathological.log 2>&1 &
 
+# 3.31
+nohup bash run.sh 0.01 "BaseConvNet" 1 64  100 "cuda:0" "local" "loss" "affinity" "non-iid_latent2" 60 100 999 "BCN_local_latent2" > log/BCN_local_pathological.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64  100 "cuda:0" "fedavg" "loss" "affinity" "non-iid_latent2" 60 100 999 "BCN_fedavg_latent2" > log/BCN_fedavg_pathological.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:0" "local_and_mutual" "loss" "affinity" "non-iid_latent2" 60 100 999 "BCN_100n_aff_latent2" > log/BCN_100n_aff_latent.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:0" "local_and_mutual" "loss" "flood" "non-iid_latent2" 80 100 999 "BCN_100n_flood_latent2" > log/BCN_100n_flood_pathological.log 2>&1 &
+
+# 4.1
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 25 "cuda:0" "local_and_mutual" "loss" "affinity_cluster" "non-iid_latent2" 60 25 999 "BCN_25n_affC_latent2" > log/BCN_25n_affC_latent2.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:0" "local_and_mutual" "loss" "affinity_cluster" "non-iid_latent2" 60 15 999 "BCN_15n_affC_latent2" > log/BCN_15n_affC_latent2.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:0" "local_and_mutual" "loss" "affinity_cluster" "non-iid_latent2" 60 100 999 "BCN_100n_affC_latent2" > log/BCN_100n_affC_latent2.log 2>&1 &

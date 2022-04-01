@@ -7,7 +7,6 @@ import sys
 
 import numpy as np
 
-
 # 添加环境
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../FedML")))
@@ -26,6 +25,7 @@ from MyExpr.data import Data
 
 from MyExpr.utils import compute_emd
 from MyExpr.utils import generate_heatmap
+from MyExpr.utils import calc_emd_heatmap
 
 # 固定种子后，deter设置为true能固定每次结果相同
 # torch.backends.cudnn.deterministic = True
@@ -34,6 +34,9 @@ from MyExpr.utils import generate_heatmap
 
 parser = add_args()
 args = parser.parse_args()
+
+args.num_clients_per_dist = int(args.client_num_in_total / args.num_distributions)
+
 trainer = Trainer(args)
 print("初始化trainer完成")
 broadcaster = Broadcaster(args)
@@ -54,30 +57,25 @@ print("**********finishing topology generation**********")
 data = Data(args)
 data.generate_loader()
 
-trainer.test_loader = data.test_all
-
-# 临时这么写方便，todo 后续有需要再改
-if args.data_distribution == "non-iid_pathological":
-    test_non_iid, client_class_dic, class_client_dic= data.test_non_iid, data.client_class_dic, data.class_client_dic
-    # print("length of test_all: {}".format(len(test_all)))
-    # print("length of test_non_iid: {}".format(len(test_non_iid[0])))
-    # todo 这一堆初始化都要改掉
-    trainer.test_non_iid = data.test_non_iid
-    trainer.client_class_dic = data.client_class_dic
-    trainer.class_client_dic = data.class_client_dic
-elif args.data_distribution == "non-iid_latent":
-    # 加载出non-iid数据字典
-    trainer.dist_client_dict = data.dist_client_dict
-    trainer.test_non_iid = data.test_non_iid
+# # 临时这么写方便，todo 后续有需要再改
+# if args.data_distribution == "non-iid_pathological":
+#     # print("length of test_all: {}".format(len(test_all)))
+#     # print("length of test_non_iid: {}".format(len(test_non_iid[0])))
+#     # todo 这一堆初始化都要改掉
+#     trainer.test_non_iid = data.test_non_iid
+#     trainer.client_class_dic = data.client_class_dic
+#     trainer.class_client_dic = data.class_client_dic
+# elif args.data_distribution == "non-iid_latent":
+#     # 加载出non-iid数据字典
+#     trainer.dist_client_dict = data.dist_client_dict
+#     trainer.test_non_iid = data.test_non_iid
 
 client_dic = {}
-print("初始化recorder...", end="")
-recorder = Recorder(client_dic, topology_manager, trainer, broadcaster, topK_selector, args)
-print("完毕")
+recorder = Recorder(client_dic, topology_manager, trainer, broadcaster, topK_selector, data, args)
 
 # 选择网络
 model_builder = get_model_builder(args)
-print(f"采用网络{args.model}进行试验")
+
 
 # 7、初始化client, 选择搭载模型等
 print("初始化clients...", end="")
@@ -91,6 +89,9 @@ for c_id in range(client_num_in_total):
     # 方便更换策略
     c.register(topK_selector=topK_selector, recorder=recorder, broadcaster=broadcaster)
     client_dic[c_id] = c
+for c_id in range(client_num_in_total):
+    client_dic[c_id].initialize()
+reallocate_client_id = True
 print("完毕")
 
 broadcaster.initialize()
@@ -98,27 +99,7 @@ broadcaster.initialize()
 name = None if args.name == '' else args.name
 
 # 计算client数据之间的emd热力图
-emd_list = np.zeros([client_num_in_total, client_num_in_total], dtype = np.float64)
-train_data = data.train_data
-train_idx_dict = data.train_idx_dict
-epsilon = 1e-10
-for c_id_from in range(client_num_in_total):
-    for c_id_to in range(client_num_in_total):
-        # if c_id_from == c_id_to:
-        #     emd_list[c_id_from][c_id_to] = 0
-        #     continue
-        train_data_from = [train_data.targets[x] for x in train_idx_dict[c_id_from]]
-        train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
-        emd = compute_emd(train_data_from, train_data_to)
-        # emd_list[c_id_from][c_id_to] = 1 / (emd + epsilon)
-        emd_list[c_id_from][c_id_to] = emd
-# print(emd_list.shape)
-# emd_list = emd_list - emd_list.min() / (emd_list.max() - emd_list.min())
-
-emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)
-for c_id in range(client_num_in_total):
-    emd_list[c_id][c_id] = 0
-# print(emd_list)
+emd_list = calc_emd_heatmap(data.train_data, data.train_idx_dict, args)
 if not os.path.exists(f'./heatmap/{name}'):
     os.makedirs(f'./heatmap/{name}')
 generate_heatmap(emd_list, f"./heatmap/{name}/emd_heatmap2")
@@ -126,7 +107,7 @@ generate_heatmap(emd_list, f"./heatmap/{name}/emd_heatmap2")
 args.turn_on_wandb = False
 
 if args.turn_on_wandb:
-    wandb.init(project="dfl4",
+    wandb.init(project="dfl5",
                entity="kyriegyj",
                name=name,
                config=args)
@@ -144,8 +125,11 @@ for rounds in range(args.comm_round):
     trainer.overall_test()
     # 在每个类包含的标签的测试数据上测试
     trainer.non_iid_test()
-    # 打印权重热力图（如果采用聚类广播算法）
-    broadcaster.get_p_heatmap(f"./heatmap/{name}/weight_{rounds}")
+    # 打印affinity热力图（如果采用聚类广播算法）
+    broadcaster.draw_w_heatmap(f"./heatmap/{name}/weight_{rounds}")
+    # 打印p矩阵热力图
+    if args.broadcaster_strategy == "affinity_topK":
+        broadcaster.get_clients_p_heatmap(f"./heatmap/{name}/p_{rounds}")
     # 打印通信频率热力图
     broadcaster.get_freq_heatmap(f"./heatmap/{name}/freq_{rounds}")
 

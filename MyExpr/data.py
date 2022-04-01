@@ -125,9 +125,19 @@ class Data(object):
         self.test_all = DataLoader(self.test_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
         self.train_loader, self.validation_loader, self.test_loader, self.test_non_iid = [], [], [], []
 
-        self.client_class_dic = {}
-        self.class_client_dic = {}
         self.generate_loader = None
+        self.train_idx_dict = {}
+
+        # 记录每个client持有哪些类
+        self.client_class_dic = {}
+        # 记录每个类被哪些client持有
+        self.class_client_dic = {}
+
+        # 记录每个client属于哪个分布
+        self.client_dist_dict = {}
+        # 记录每个分布包含哪些client
+        self.dist_client_dict = {}
+
 
         if args.data_distribution == "iid":
             self.generate_loader = self.iid
@@ -135,6 +145,8 @@ class Data(object):
             self.generate_loader = self.non_iid_pathological
         elif args.data_distribution == "non-iid_latent":
             self.generate_loader = self.non_iid_latent
+        elif args.data_distribution == "non-iid_latent2":
+            self.generate_loader = self.non_iid_latent_decrapted
 
         self.shuffle = True
 
@@ -212,10 +224,9 @@ class Data(object):
         train_idx_dict, test_idx_dict = self.partition_data(args.client_num_in_total, alpha=0.5)
         Y_train = np.array(self.train_data.targets)
 
-        # for key in train_idx_dict:
-        #     print(key)
-        # for key in test_idx_dict:
-        #     print(key)
+        self.train_idx_dict = train_idx_dict
+
+        # todo check字典key是顺序的
 
         client_train_dataset, client_validation_dataset = self.validation_partition(train_idx_dict, train_data, args)
         client_test_dataset = []
@@ -242,11 +253,13 @@ class Data(object):
         distributions_dict = {}
         # todo 要改
         self.dist_client_dict = {}
+        self.client_dist_dict = {}
         for client_id, cluster_id in enumerate(distributions):
             if cluster_id not in distributions_dict:
                 distributions_dict[cluster_id] = []
                 self.dist_client_dict[cluster_id] = []
             self.dist_client_dict[cluster_id].append(client_id)
+            self.client_dist_dict[client_id] = cluster_id
             distributions_dict[cluster_id] += test_idx_dict[client_id]
             # todo 还得记录训练数据集作为上界
             # distributions_dict[cluster_id] += train_idx_dict[client_id]
@@ -279,8 +292,6 @@ class Data(object):
             print(f"client {client_id} has {len(client_train_dataset[client_id])} train data, "
                   f"{len(client_validation_dataset[client_id])} validation data and {len(client_test_dataset[client_id])} test data")
 
-
-        self.train_idx_dict = train_idx_dict
         average_emd = np.mean(
             [compute_emd([train_data.targets[x] for x in train_idx_dict[ix]], train_data.targets)
              for ix in range(args.client_num_in_total)], axis=0)
@@ -506,268 +517,303 @@ class Data(object):
         print('Data statistics: %s' % str(net_cls_counts))
         return net_cls_counts
 
-    # def non_iid_latent_decrapted(self):
-    #     args = self.args
-    #
-    #     self.precomputed_root = "./../data/precomputed"
-    #     self.embedding_fname = 'embeddings-d=cifar10-e=4-st=5-lr=0.001-mo=0.9-wd=0.0001-fc2-train.npy'
-    #     self.train_embedding_fname = self.embedding_fname
-    #     self.test_embedding_fname = 'embeddings-d=cifar10-e=4-st=5-lr=0.001-mo=0.9-wd=0.0001-fc2-test.npy'
-    #     kmeans_labels_prefix = f'kmeans-nd={args.num_distributions}-s={args.seed}-ds={args.data_seed}'
-    #     self.kmeans_train_fname = f'{kmeans_labels_prefix}-{self.embedding_fname}'
-    #     self.kmeans_test_fname = f'{kmeans_labels_prefix}-{self.test_embedding_fname}'
-    #
-    #     """
-    #     参考FedFomo
-    #     Initialize client data distributions with through latent non-IID method
-    #     - Groups datapoints into D groupings based on clustering their
-    #       hidden-layer representations from a pre-trained model
-    #     """
-    #     # init_distribution
-    #     dict_data = {'inputs': np.array(self.train_data.data),
-    #                  'targets': np.array(self.train_data.targets),
-    #                  'test_inputs': np.array(self.test_data.data),
-    #                  'test_targets': np.array(self.test_data.targets)}
-    #
-    #     # 先计算VGG在这个数据集上的训练后的，倒数第二个隐藏层输出作为model embedding，随后根据emb edding聚类
-    #     # 如果已有计算好的embedding，直接读取
-    #     try:
-    #         path = join(self.precomputed_root, self.train_embedding_fname)
-    #         print(f'> Loading training embeddings from {path}...')
-    #         with open(path, 'rb') as f:
-    #             train_embeddings = np.load(f)
-    #             dict_data['train_embeddings'] = train_embeddings
-    #
-    #         path = join(self.precomputed_root, self.test_embedding_fname)
-    #         print(f'> Loading test embeddings from {path}...')
-    #         with open(path, 'rb') as f:
-    #             dict_data['test_embeddings'] = np.load(f)
-    #     except FileNotFoundError:
-    #         print(f'>> Embedding path not found. Calculating new embeddings...')
-    #         # setup_train_data = torchvision.datasets.CIFAR10(root=self.dataset_root, train=True, download=False, transform=self.setup_transform)
-    #         # setup_test_data = torchvision.datasets.CIFAR10(root=self.dataset_root, train=False, download=False, transform=self.setup_test_transform)
-    #         setup_train_data = self.train_data
-    #         setup_test_data = self.test_data
-    #
-    #         all_embeddings = get_embeddings(setup_train_data,
-    #                                         setup_test_data,
-    #                                         num_epochs=5,  # 10,
-    #                                         args=args,
-    #                                         stopping_threshold=5)
-    #
-    #         train_embeddings, test_embeddings = all_embeddings
-    #         dict_data['train_embeddings'] = train_embeddings
-    #         dict_data['test_embeddings'] = test_embeddings
-    #
-    #     print(f"Train embedding shape: {dict_data['train_embeddings'].shape}")
-    #     print(f"Test embedding shape: {dict_data['test_embeddings'].shape}")
-    #
-    #     if args.num_distributions == 10:
-    #         dist_labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    #         kmeans_labels = np.array([dist_labels[t] for t in dict_data['targets']])
-    #         kmeans_labels_test = np.array([dist_labels[t] for t in dict_data['test_targets']])
-    #     else:
-    #         # 如果是随机分布，即iid分布
-    #         # if self.random_dists:
-    #         #     print('> Random dataset distribution initialization...')
-    #         #     kmeans_labels = np.random.randint(self.num_distributions, size=len(dict_data['inputs']))
-    #         #     kmeans_labels_test = np.random.randint(self.num_distributions, size=len(dict_data['test_inputs']))
-    #         #
-    #         # else:
-    #         try:  # First see if kmeans labels were already computed, and load those
-    #             path = join(self.precomputed_root, self.kmeans_train_fname)
-    #             with open(path, 'rb') as f:
-    #                 kmeans_labels = np.load(path)
-    #             path = join(self.precomputed_root, self.kmeans_test_fname)
-    #             print(f'> Loaded clustered labels from {path}!')
-    #             with open(path, 'rb') as f:
-    #                 kmeans_labels_test = np.load(path)
-    #             print(f'> Loaded clustered labels from {path}!')
-    #         except FileNotFoundError:
-    #             # Compute PCA first on combined train and test embeddings
-    #             embeddings = np.concatenate([dict_data['train_embeddings'],
-    #                                          dict_data['test_embeddings']])
-    #             np.random.seed(args.data_seed)
-    #             num_components = 256
-    #             pca = PCA(n_components=num_components)
-    #             dict_data['embeddings'] = pca.fit_transform(embeddings)
-    #             print_debug(pca.explained_variance_ratio_.cumsum()[-1],
-    #                         f'Ratio of embedding variance explained by {num_components} principal components')
-    #
-    #             # Compute clusters
-    #             np.random.seed(args.data_seed)
-    #             km = KMeans(n_clusters=self.args.num_distributions,
-    #                         init='k-means++', max_iter=100, n_init=5)
-    #
-    #             # # For random distributions, specify km.labels_ randomly across the number of distributions
-    #             # if self.random_dists:
-    #             #     km.labels_ = np.random.randint(self.num_distributions,
-    #             #                                    size=len(embeddings))
-    #             #     print_debug(len(dict_data['inputs']), 'Size of dataset')
-    #             # else:
-    #             #     km.fit(dict_data['embeddings'])
-    #             km.fit(dict_data['embeddings'])
-    #
-    #             kmeans_labels_train_test = km.labels_
-    #
-    #             # Partition into train and test
-    #             kmeans_labels = kmeans_labels_train_test[:len(self.train_data.targets)]
-    #             kmeans_labels_test = kmeans_labels_train_test[len(self.train_data.targets):]
-    #
-    #             assert len(kmeans_labels) == len(dict_data['inputs'])
-    #             print_debug(len(kmeans_labels_test), 'len(kmeans_labels_test)')
-    #             print_debug(len(dict_data['test_inputs']), "len(dict_data['test_inputs'])")
-    #             assert len(kmeans_labels_test) == len(dict_data['test_inputs'])
-    #
-    #             path = join(self.precomputed_root, self.kmeans_train_fname)
-    #             with open(path, 'wb') as f:
-    #                 np.save(f, kmeans_labels)
-    #             print(f'> Saved clustered labels to {path}!')
-    #
-    #             path = join(self.precomputed_root, self.kmeans_test_fname)
-    #             with open(path, 'wb') as f:
-    #                 np.save(f, kmeans_labels_test)
-    #             print(f'> Saved clustered labels to {path}!')
-    #
-    #     loaded_images = dict_data['inputs']
-    #     loaded_labels = dict_data['targets']
-    #
-    #     loaded_images_test = dict_data['test_inputs']
-    #     loaded_labels_test = dict_data['test_targets']
-    #
-    #     distributions = []
-    #
-    #     # 将聚类好的每个distribution的数据载入字典images_dist，labels_dist，放入distributions[i]
-    #     for cluster_label in range(self.args.num_distributions):
-    #         indices = np.where(kmeans_labels == cluster_label)[0]
-    #         images_dist = loaded_images[indices]
-    #         labels_dist = loaded_labels[indices]
-    #
-    #         if self.shuffle:
-    #             np.random.seed(args.data_seed)
-    #             shuffle_ix = list(range(images_dist.shape[0]))
-    #             np.random.shuffle(shuffle_ix)
-    #             images_dist = images_dist[shuffle_ix]
-    #             labels_dist = labels_dist[shuffle_ix]
-    #             indices = indices[shuffle_ix]
-    #
-    #         test_indices = np.where(kmeans_labels_test == cluster_label)[0]
-    #         test_images_dist = loaded_images_test[test_indices]
-    #         test_labels_dist = loaded_labels_test[test_indices]
-    #
-    #         if self.shuffle:
-    #             np.random.seed(args.data_seed)
-    #             shuffle_ix = list(range(test_images_dist.shape[0]))
-    #             np.random.shuffle(shuffle_ix)
-    #             test_images_dist = test_images_dist[shuffle_ix]
-    #             test_labels_dist = test_labels_dist[shuffle_ix]
-    #             test_indices = test_indices[shuffle_ix]
-    #
-    #         test_loader = DataLoader(torch.utils.data.Subset(self.test_data, indices=test_indices), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    #
-    #         # Should be good if the embeddings were calculated in order
-    #         distributions.append({'images': images_dist,
-    #                               'labels': labels_dist,
-    #                               # 'clients': [],
-    #                               'clients_data': [],
-    #                               'id': cluster_label,
-    #                               'indices': indices,
-    #                               'test_loader': test_loader,
-    #                               'test_labels': test_labels_dist,
-    #                               'test_indices': test_indices})
-    #
-    #     # 打印划分结果
-    #     for d in range(len(distributions)):
-    #         dist_dict = distributions[d]
-    #         labels = dist_dict['labels']
-    #         labels, counts = np.unique(labels, return_counts=True)
-    #         counts = ' '.join([f'({labels[i]:2d}, {counts[i]:4d})' for i in range(len(labels))])
-    #         print(f'Distribution {d} train (labels, counts)')
-    #         print(f'{counts}')
-    #         labels = dist_dict['test_labels']
-    #         labels, counts = np.unique(labels, return_counts=True)
-    #         counts = ' '.join([f'({labels[i]:2d}, {counts[i]:4d})' for i in range(len(labels))])
-    #         print(f'Distribution {d} test (labels, counts)')
-    #         print(f'{counts}')
-    #
-    #     self.init_clients_data(distributions)
-    #     self.distributions = distributions
+    def non_iid_latent_decrapted(self):
+        args = self.args
 
-    # def init_clients_data(self, distributions):
-    #     print('> Initializing clients...')
-    #
-    #     print(f'>> Total clients: {self.args.client_num_in_total}')
-    #     print(f'>> Clients per distribution: {self.args.num_clients_per_dist}')
-    #
-    #     # 将每个distribution里的数据划分成num_clients_per_dist份，以供后续client初始化
-    #     for ix, dist in enumerate(distributions):
-    #         # Already shuffled during initialization, but can do again if desired
-    #         np.random.seed(self.args.data_seed)
-    #         shuffle_ix = list(range(len(distributions[ix]['images'])))
-    #         np.random.shuffle(shuffle_ix)
-    #
-    #         images = dist['images'][shuffle_ix]
-    #         labels = dist['labels'][shuffle_ix]
-    #         indices = dist['indices'][shuffle_ix]
-    #
-    #         # todo why???
-    #         # Transpose images and numpy dims
-    #         # if dist['images'].shape[1] != 3:
-    #         #     dims = dist['images'][shuffle_ix].shape
-    #         #
-    #         #     images = images.transpose([0, 3, 1, 2])
-    #         #     dims_ = images.shape
-    #         #     print(f'Transposing image dims for data loading: {dims} => {dims_}')
-    #
-    #         # 为每个client分配数据
-    #         data_by_clients = np.array_split(images, len(self.args.num_clients_per_dist))
-    #         labels_by_clients = np.array_split(labels, len(self.args.num_clients_per_dist))
-    #         indices_by_clients = np.array_split(indices, len(self.args.num_clients_per_dist))
-    #
-    #         # Do the same for test set
-    #         test_indices = dist['test_indices']
-    #         test_indices_by_clients = np.array_split(test_indices, len(self.args.num_clients_per_dist))
-    #
-    #         # 分配distribution中的数据给client
-    #         for i in range(len(self.args.num_clients_per_dist)):
-    #
-    #             # 确保data和labels能够对上
-    #             assert data_by_clients[i].shape[0] == labels_by_clients[i].shape[0]
-    #
-    #             client_indices = indices_by_clients[i]
-    #             client_test_indices = test_indices_by_clients[i]
-    #             client_dataset = torch.utils.data.Subset(self.train_data, indices=client_indices)
-    #             client_test_dataset = torch.utils.data.Subset(self.test_data, indices=client_test_indices)
-    #             client_targets = [self.train_data.targets[x] for x in client_indices]
-    #             client_unique_classes = np.unique(client_targets)
-    #
-    #             # 划分validation
-    #             train_split_size = int(np.round(self.args.train_split * len(client_dataset)))
-    #             val_split_size = len(client_dataset) - train_split_size
-    #
-    #             client_train_dataset, client_val_dataset = torch.utils.data.random_split(client_dataset,
-    #                                                                                      [train_split_size,
-    #                                                                                       val_split_size])
-    #             dist['clients_data'].append([client_indices, client_test_indices, client_train_dataset,
-    #                                          client_val_dataset, client_test_dataset, client_unique_classes])
-    #
-    #
-    #     # if args.parallelize:
-    #     #     pass
-    #     # else:
-    #     #     # Compute EMD
-    #     #     average_emd = np.mean([compute_emd(client.targets, self.train_data.targets) for client in self.clients])
-    #     #     print_header(f'> Global mean EMD: {average_emd}')
-    #     #     for client in self.clients:
-    #     #         client.EMD = average_emd
-    #     #     if args.num_distributions > 1:
-    #     #         self.finalize_client_datasets()
-    #
-    #     emd_list = []
-    #     for ix, dist in enumerate(distributions):
-    #         for i in range(len(self.args.num_clients_per_dist)):
-    #             emd_list.append(compute_emd(self.train_data.targets[dist['clients_data'][0]], self.train_data.targets))
-    #     average_emd = np.mean(emd_list, axis=0)
-    #     print(f'> Global mean EMD: {average_emd}')
+        self.precomputed_root = "./../data/precomputed"
+        self.embedding_fname = 'embeddings-d=cifar10-e=4-st=5-lr=0.001-mo=0.9-wd=0.0001-fc2-train.npy'
+        self.train_embedding_fname = self.embedding_fname
+        self.test_embedding_fname = 'embeddings-d=cifar10-e=4-st=5-lr=0.001-mo=0.9-wd=0.0001-fc2-test.npy'
+        kmeans_labels_prefix = f'kmeans-nd={args.num_distributions}-s={args.seed}-ds={args.data_seed}'
+        self.kmeans_train_fname = f'{kmeans_labels_prefix}-{self.embedding_fname}'
+        self.kmeans_test_fname = f'{kmeans_labels_prefix}-{self.test_embedding_fname}'
+
+        """
+        参考FedFomo
+        Initialize client data distributions with through latent non-IID method
+        - Groups datapoints into D groupings based on clustering their
+          hidden-layer representations from a pre-trained model
+        """
+        # init_distribution
+        dict_data = {'inputs': np.array(self.train_data.data),
+                     'targets': np.array(self.train_data.targets),
+                     'test_inputs': np.array(self.test_data.data),
+                     'test_targets': np.array(self.test_data.targets)}
+
+        # 先计算VGG在这个数据集上的训练后的，倒数第二个隐藏层输出作为model embedding，随后根据emb edding聚类
+        # 如果已有计算好的embedding，直接读取
+        try:
+            path = join(self.precomputed_root, self.train_embedding_fname)
+            print(f'> Loading training embeddings from {path}...')
+            with open(path, 'rb') as f:
+                train_embeddings = np.load(f)
+                dict_data['train_embeddings'] = train_embeddings
+
+            path = join(self.precomputed_root, self.test_embedding_fname)
+            print(f'> Loading test embeddings from {path}...')
+            with open(path, 'rb') as f:
+                dict_data['test_embeddings'] = np.load(f)
+        except FileNotFoundError:
+            print(f'>> Embedding path not found. Calculating new embeddings...')
+            # setup_train_data = torchvision.datasets.CIFAR10(root=self.dataset_root, train=True, download=False, transform=self.setup_transform)
+            # setup_test_data = torchvision.datasets.CIFAR10(root=self.dataset_root, train=False, download=False, transform=self.setup_test_transform)
+            setup_train_data = self.train_data
+            setup_test_data = self.test_data
+
+            all_embeddings = get_embeddings(setup_train_data,
+                                            setup_test_data,
+                                            num_epochs=5,  # 10,
+                                            args=args,
+                                            stopping_threshold=5)
+
+            train_embeddings, test_embeddings = all_embeddings
+            dict_data['train_embeddings'] = train_embeddings
+            dict_data['test_embeddings'] = test_embeddings
+
+        print(f"Train embedding shape: {dict_data['train_embeddings'].shape}")
+        print(f"Test embedding shape: {dict_data['test_embeddings'].shape}")
+
+        if args.num_distributions == 10:
+            dist_labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            kmeans_labels = np.array([dist_labels[t] for t in dict_data['targets']])
+            kmeans_labels_test = np.array([dist_labels[t] for t in dict_data['test_targets']])
+        else:
+            # 如果是随机分布，即iid分布
+            # if self.random_dists:
+            #     print('> Random dataset distribution initialization...')
+            #     kmeans_labels = np.random.randint(self.num_distributions, size=len(dict_data['inputs']))
+            #     kmeans_labels_test = np.random.randint(self.num_distributions, size=len(dict_data['test_inputs']))
+            #
+            # else:
+            try:  # First see if kmeans labels were already computed, and load those
+                path = join(self.precomputed_root, self.kmeans_train_fname)
+                with open(path, 'rb') as f:
+                    kmeans_labels = np.load(path)
+                path = join(self.precomputed_root, self.kmeans_test_fname)
+                print(f'> Loaded clustered labels from {path}!')
+                with open(path, 'rb') as f:
+                    kmeans_labels_test = np.load(path)
+                print(f'> Loaded clustered labels from {path}!')
+            except FileNotFoundError:
+                # Compute PCA first on combined train and test embeddings
+                embeddings = np.concatenate([dict_data['train_embeddings'],
+                                             dict_data['test_embeddings']])
+                np.random.seed(args.data_seed)
+                num_components = 256
+                pca = PCA(n_components=num_components)
+                dict_data['embeddings'] = pca.fit_transform(embeddings)
+                print_debug(pca.explained_variance_ratio_.cumsum()[-1],
+                            f'Ratio of embedding variance explained by {num_components} principal components')
+
+                # Compute clusters
+                np.random.seed(args.data_seed)
+                km = KMeans(n_clusters=self.args.num_distributions,
+                            init='k-means++', max_iter=100, n_init=5)
+
+                # # For random distributions, specify km.labels_ randomly across the number of distributions
+                # if self.random_dists:
+                #     km.labels_ = np.random.randint(self.num_distributions,
+                #                                    size=len(embeddings))
+                #     print_debug(len(dict_data['inputs']), 'Size of dataset')
+                # else:
+                #     km.fit(dict_data['embeddings'])
+                km.fit(dict_data['embeddings'])
+
+                kmeans_labels_train_test = km.labels_
+
+                # Partition into train and test
+                kmeans_labels = kmeans_labels_train_test[:len(self.train_data.targets)]
+                kmeans_labels_test = kmeans_labels_train_test[len(self.train_data.targets):]
+
+                assert len(kmeans_labels) == len(dict_data['inputs'])
+                print_debug(len(kmeans_labels_test), 'len(kmeans_labels_test)')
+                print_debug(len(dict_data['test_inputs']), "len(dict_data['test_inputs'])")
+                assert len(kmeans_labels_test) == len(dict_data['test_inputs'])
+
+                path = join(self.precomputed_root, self.kmeans_train_fname)
+                with open(path, 'wb') as f:
+                    np.save(f, kmeans_labels)
+                print(f'> Saved clustered labels to {path}!')
+
+                path = join(self.precomputed_root, self.kmeans_test_fname)
+                with open(path, 'wb') as f:
+                    np.save(f, kmeans_labels_test)
+                print(f'> Saved clustered labels to {path}!')
+
+        loaded_images = dict_data['inputs']
+        loaded_labels = dict_data['targets']
+
+        loaded_images_test = dict_data['test_inputs']
+        loaded_labels_test = dict_data['test_targets']
+
+        distributions = []
+
+        # 将聚类好的每个distribution的数据载入字典images_dist，labels_dist，放入distributions[i]
+        for cluster_label in range(self.args.num_distributions):
+            indices = np.where(kmeans_labels == cluster_label)[0]
+            images_dist = loaded_images[indices]
+            labels_dist = loaded_labels[indices]
+
+            if self.shuffle:
+                np.random.seed(args.data_seed)
+                shuffle_ix = list(range(images_dist.shape[0]))
+                np.random.shuffle(shuffle_ix)
+                images_dist = images_dist[shuffle_ix]
+                labels_dist = labels_dist[shuffle_ix]
+                indices = indices[shuffle_ix]
+
+            test_indices = np.where(kmeans_labels_test == cluster_label)[0]
+            test_images_dist = loaded_images_test[test_indices]
+            test_labels_dist = loaded_labels_test[test_indices]
+
+            if self.shuffle:
+                np.random.seed(args.data_seed)
+                shuffle_ix = list(range(test_images_dist.shape[0]))
+                np.random.shuffle(shuffle_ix)
+                test_images_dist = test_images_dist[shuffle_ix]
+                test_labels_dist = test_labels_dist[shuffle_ix]
+                test_indices = test_indices[shuffle_ix]
+
+            test_loader = DataLoader(torch.utils.data.Subset(self.test_data, indices=test_indices), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+
+            # Should be good if the embeddings were calculated in order
+            distributions.append({'images': images_dist,
+                                  'labels': labels_dist,
+                                  # 'clients': [],
+                                  'clients_data': [],
+                                  'id': cluster_label,
+                                  'indices': indices,
+                                  'test_loader': test_loader,
+                                  'test_labels': test_labels_dist,
+                                  'test_indices': test_indices})
+
+        # 打印划分结果
+        # for d in range(len(distributions)):
+        #     dist_dict = distributions[d]
+        #     labels = dist_dict['labels']
+        #     labels, counts = np.unique(labels, return_counts=True)
+        #     counts = ' '.join([f'({labels[i]:2d}, {counts[i]:4d})' for i in range(len(labels))])
+        #     print(f'Distribution {d} train (labels, counts)')
+        #     print(f'{counts}')
+        #     labels = dist_dict['test_labels']
+        #     labels, counts = np.unique(labels, return_counts=True)
+        #     counts = ' '.join([f'({labels[i]:2d}, {counts[i]:4d})' for i in range(len(labels))])
+        #     print(f'Distribution {d} test (labels, counts)')
+        #     print(f'{counts}')
+
+        self.init_clients_data(distributions)
+        self.distributions = distributions
+
+    def init_clients_data(self, distributions):
+        args = self.args
+        print('> Initializing clients...')
+
+        print(f'>> Total clients: {self.args.client_num_in_total}')
+        print(f'>> Clients per distribution: {self.args.num_clients_per_dist}')
+
+        self.test_non_iid = [None for _ in range(len(distributions))]
+
+        # 将每个distribution里的数据划分成num_clients_per_dist份，以供后续client初始化
+        for ix, dist in enumerate(distributions):
+            # Already shuffled during initialization, but can do again if desired
+            np.random.seed(self.args.data_seed)
+            shuffle_ix = list(range(len(distributions[ix]['images'])))
+            np.random.shuffle(shuffle_ix)
+
+            images = dist['images'][shuffle_ix]
+            labels = dist['labels'][shuffle_ix]
+            indices = dist['indices'][shuffle_ix]
+
+            # todo why???
+            # Transpose images and numpy dims
+            # if dist['images'].shape[1] != 3:
+            #     dims = dist['images'][shuffle_ix].shape
+            #
+            #     images = images.transpose([0, 3, 1, 2])
+            #     dims_ = images.shape
+            #     print(f'Transposing image dims for data loading: {dims} => {dims_}')
+
+            # 为每个client分配数据
+            data_by_clients = np.array_split(images, self.args.num_clients_per_dist)
+            labels_by_clients = np.array_split(labels, self.args.num_clients_per_dist)
+
+            indices_by_clients = np.array_split(indices, self.args.num_clients_per_dist)
+
+            # Do the same for test set
+            test_indices = dist['test_indices']
+            test_indices_by_clients = np.array_split(test_indices, self.args.num_clients_per_dist)
+
+            non_iid_test_set = torch.utils.data.Subset(self.test_data, indices=test_indices)
+            self.test_non_iid[ix] = DataLoader(non_iid_test_set, batch_size=args.batch_size, shuffle=True,
+                                               num_workers=args.num_workers)
+
+            # 分配distribution中的数据给client
+            for i in range(self.args.num_clients_per_dist):
+
+                # 确保data和labels能够对上
+                assert data_by_clients[i].shape[0] == labels_by_clients[i].shape[0]
+
+                client_indices = indices_by_clients[i]
+                client_test_indices = test_indices_by_clients[i]
+
+                client_dataset = torch.utils.data.Subset(self.train_data, indices=client_indices)
+                client_test_dataset = torch.utils.data.Subset(self.test_data, indices=client_test_indices)
+
+                client_targets = [self.train_data.targets[x] for x in client_indices]
+                client_unique_classes = np.unique(client_targets)
+
+                # 划分validation
+                train_split_size = int(np.round(self.args.train_split * len(client_dataset)))
+                val_split_size = len(client_dataset) - train_split_size
+
+                client_train_dataset, client_val_dataset = torch.utils.data.random_split(client_dataset,
+                                                                                         [train_split_size,
+                                                                                          val_split_size])
+                dist['clients_data'].append([ix, client_indices, client_test_indices, client_train_dataset,
+                                             client_val_dataset, client_test_dataset, client_unique_classes])
+
+        # if args.parallelize:
+        #     pass
+        # else:
+        #     # Compute EMD
+        #     average_emd = np.mean([compute_emd(client.targets, self.train_data.targets) for client in self.clients])
+        #     print_header(f'> Global mean EMD: {average_emd}')
+        #     for client in self.clients:
+        #         client.EMD = average_emd
+        #     if args.num_distributions > 1:
+        #         self.finalize_client_datasets()
+        self.dist_client_dict = [[] for _ in range(len(distributions))]
+        c_id = 0
+        for ix in range(len(distributions)):
+            dist = distributions[ix]
+            for i in range(args.num_clients_per_dist):
+                client_data = dist['clients_data'][i]
+
+                self.train_loader.append(
+                    DataLoader(client_data[3], batch_size=args.batch_size, shuffle=True,
+                               num_workers=args.num_workers))
+                self.validation_loader.append(
+                    DataLoader(client_data[4], batch_size=args.batch_size, shuffle=True,
+                               num_workers=args.num_workers))
+                self.test_loader.append(
+                    DataLoader(client_data[5], batch_size=args.batch_size, shuffle=True,
+                               num_workers=args.num_workers))
+                self.dist_client_dict[client_data[0]].append(c_id)
+                self.client_dist_dict[c_id] = client_data[0]
+                self.train_idx_dict[c_id] = client_data[1]
+                c_id += 1
+
+        for ix in range(len(distributions)):
+            print(f"分布{ix}具有client:[{self.dist_client_dict[ix]}]")
+
+        # 计算emd，评估
+        emd_list = []
+        for ix, dist in enumerate(distributions):
+            for i in range(self.args.num_clients_per_dist):
+                # print(dist['clients_data'][i][1])
+                emd_list.append(compute_emd([self.train_data.targets[x] for x in dist['clients_data'][i][1]], self.train_data.targets))
+        # average_emd = np.mean(emd_list, axis=0)
+        average_emd = np.mean(emd_list)
+        print(f'> Global mean EMD : {average_emd}')
 
         # print_debug([f'Dist: {c.dist_id}, id: {c.id}, adversarial: {c.adversarial}' for c in self.clients])

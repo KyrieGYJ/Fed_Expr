@@ -173,7 +173,7 @@ def compute_embeddings(net, dataset, args, split):
     total = 0
     correct = 0
 
-    dataloader = DataLoader(dataset, batch_size=args.batch_size,
+    dataloader = DataLoader(dataset, batch_size=50,
                             shuffle=True, num_workers=args.num_workers)
 
     net.eval()
@@ -209,21 +209,8 @@ def compute_embeddings(net, dataset, args, split):
             total_embeddings[ix] = output.detach().cpu().numpy().squeeze()
 
         #         total_embeddings = [e.flatten() for e in total_embeddings]
-        print(len(total_embeddings), total_embeddings[0].shape)
-        print(len(dataloader))
-        # print(len(total_embeddings[0::3]))
-        # shap = total_embeddings[0::3][0].shape
-        # for te in total_embeddings[0::3]:
-        #     if te.shape != shap:
-        #         print(te.shape)
-        # shap = total_embeddings[0::3][1].shape
-        # for te in total_embeddings[1::3]:
-        #     if te.shape != shap:
-        #         print(te.shape)
-        # shap = total_embeddings[2::3][2].shape
-        # for te in total_embeddings[2::3]:
-        #     if te.shape != shap:
-        #         print(te.shape)
+        # print(len(total_embeddings), total_embeddings[0].shape)
+        # print(len(dataloader))
         n_samples = len(dataset.targets)
         # todo 垃圾东西，不能跟任意batch_size兼容
         total_embeddings_fc1 = np.stack(total_embeddings[0::3]).reshape((n_samples, -1))

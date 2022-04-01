@@ -38,7 +38,7 @@ def add_args():
     parser.add_argument('--client_num_in_total', type=int, default=10, metavar='NN',
                         help='number of workers in a distributed cluster')
 
-    parser.add_argument('--num_clients_per_dist', type=int, default=15,
+    parser.add_argument('--num_clients_per_dist', type=int, default=20,
                         help="the number of client of each distribution in latent non-iid manner")
 
     parser.add_argument('--topology_neighbors_num_undirected', type=int, default=20)
@@ -83,6 +83,9 @@ def add_args():
     parser.add_argument('--seed', default=0, type=int, help="Random seed (default 0)")
 
     parser.add_argument('--shards_per_user', type=int, default=2, help="2, 3, 4, 5, 10")
+
+    parser.add_argument('--model_delta_norm', default='l1', type=str,
+                        help="Which norm to use in FedFomo update, from ('l1' | 'l2' | 'l2_root')")
 
     # latent-non-iid中的分布数量
     parser.add_argument('--num_distributions', type=int, default=5, help="2, 3, 4, 5, 10")

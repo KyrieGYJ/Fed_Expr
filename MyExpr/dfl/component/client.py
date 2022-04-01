@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import logging
 
 class Client(object):
@@ -47,11 +48,38 @@ class Client(object):
         # 当前回合邻居模型在本地训练数据上的output(如果加入了topK策略，output就都已经计算好了)
         self.neighbors_output_dict = {}
 
+        # 上回合的缓存
+        self.last_received_w_dict = {}
+        # 保存其他client发送过来的weight
+        self.received_w_dict = {}
+        self.p = []
+        self.w = []
+        self.affinity_matrix = []
+
     def register(self, topK_selector, recorder, broadcaster):
         self.topK_selector = topK_selector
         self.recorder = recorder
         self.broadcaster = broadcaster
-        # 设置device
+
+    def initialize(self):
+        # todo 只有affinity_cluster要用到
+        client_dic = self.recorder.client_dic
+        other_weight = 0.
+        client_initial_self_weight = 0.1
+        # self.p = [[torch.tensor(1. * other_weight) for _ in client_dic] for _ in client_dic]
+        # self.w = [[torch.tensor(1. * other_weight) for _ in client_dic] for _ in client_dic]
+        self.p = np.ones([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64) * other_weight
+        self.w = np.ones([self.args.client_num_in_total], dtype=np.float64) * other_weight
+        for c_id in client_dic:
+            topology = self.recorder.topology_manager.get_symmetric_neighbor_list(c_id)
+            for neighbor_id in client_dic:
+                # 不相邻的client不存在权重
+                if topology[neighbor_id] == 0:
+                    self.p[c_id][neighbor_id] = 0.
+                    self.w[neighbor_id] = 0.
+                elif neighbor_id == c_id:
+                    self.p[c_id][neighbor_id] = 1. * client_initial_self_weight
+                    self.w[neighbor_id] = 1. * client_initial_self_weight
 
     def local_train(self):
         total_loss, total_correct = 0.0, 0.0
@@ -91,7 +119,7 @@ class Client(object):
         total_KLD_loss = 0.0
         total_local_loss = 0.0
         iteration = 0
-        print(f"client[{self.client_id}]共{len(self.received_model_dict)}个client互学习参与")
+        # print(f"client[{self.client_id}]共{len(self.received_model_dict)}个client互学习参与")
         for idx, (train_X, train_Y) in enumerate(self.train_loader):
             train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
             local_outputs = self.model(train_X)

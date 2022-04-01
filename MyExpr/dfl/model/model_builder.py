@@ -22,4 +22,5 @@ def get_model_builder(args):
         model_builder = BaseConvNet
     elif args.model == "FedAvgCNN":
         model_builder = FedAvgCNN
+    print(f"采用网络{args.model}进行试验")
     return model_builder

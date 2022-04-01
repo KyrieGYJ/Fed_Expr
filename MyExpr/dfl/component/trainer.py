@@ -1,8 +1,11 @@
 import torch.nn as nn
 import torch
 import wandb
+import numpy as np
 
 from MyExpr.cfl.server import Server
+from MyExpr.utils import cal_w
+from MyExpr.utils import get_adjacency_matrix
 
 # 协同训练器：采用某种协同训练策略, 控制某一个communication_round训练
 class Trainer(object):
@@ -42,6 +45,8 @@ class Trainer(object):
         if args.data_distribution == "non-iid_pathological":
             self.non_iid_test = self.non_iid_test_pathological
         elif args.data_distribution == "non-iid_latent":
+            self.non_iid_test = self.non_iid_test_latent
+        elif args.data_distribution == "non-iid_latent2":
             self.non_iid_test = self.non_iid_test_latent
 
         # decrapted
@@ -83,7 +88,70 @@ class Trainer(object):
             client = self.client_dic[c_id]
             client.broadcast()
             # print("client {} 广播完毕".format(c_id))
-        # print(self.client_dic[0].broadcaster.p, self.client_dic[0].broadcaster.w)
+        # 如果是affinity算法，第一轮是flood广播。接收到第一轮的neighbor模型后，要计算初始权重，然后再广播出去，聚合接收到的所有权重，生成初始的affinity矩阵。
+        if self.args.broadcaster_strategy in ["affinity_cluster", "affinity_baseline", "affinity_topK"] and self.recorder.rounds == 0:
+            print("额外初始化affinity矩阵。。。")
+            # 缓存flood阶段接收到的模型
+            for c_id in self.client_dic:
+                client = self.client_dic[c_id]
+                client.last_received_model_dict = client.received_model_dict
+                client.last_received_topology_weight_dict = client.received_topology_weight_dict
+
+            # 计算权重
+            for sender_id in self.client_dic:
+                client_dic = self.recorder.client_dic
+                sender = client_dic[sender_id]
+                if sender_id not in sender.last_received_model_dict:
+                    sender.last_received_model_dict[sender_id] = sender.model
+                # print(sender.p)
+                new_w = cal_w(sender, self.recorder.args)
+                new_w_list = []
+                for i in range(self.args.client_num_in_total):
+                    if i in new_w:
+                        new_w_list.append(new_w[i])
+                    else:
+                        new_w_list.append(0)
+                # print(new_w_list)
+
+                normalization_factor = np.abs(np.sum(new_w_list))
+
+                if normalization_factor < 1e-9:
+                    print('Normalization factor is really small')
+                    normalization_factor += 1e-9
+                new_w_list = np.array(new_w_list) / normalization_factor
+
+                sender.p[sender.client_id] += new_w_list
+                sender.w = new_w_list
+
+            # flood广播权重
+            for sender_id in self.client_dic:
+                sender = self.client_dic[sender_id]
+                sender.broadcast()
+
+            # 聚合上一轮接收到的权重
+            print("根据接收到的邻居权重计算affinity矩阵，根据affinity聚类重新广播")
+            for sender_id in self.client_dic:
+                sender = self.client_dic[sender_id]
+                # print(f"client {sender_id} 接收到 {sender.received_w_dict.keys()} 的权重")
+                for neighbor_id in sender.received_w_dict:
+                    sender.p[neighbor_id] += sender.received_w_dict[neighbor_id]
+                # 防止flood广播的缓存影响接下来的affinity广播
+                sender.received_w_dict = {}
+
+            # 计算affinity矩阵
+            for sender_id in self.client_dic:
+                sender = self.client_dic[sender_id]
+                # 计算affinity矩阵
+                affinity_matrix = get_adjacency_matrix(sender)
+                # print(sender.p)
+                # 根据affinity矩阵直接广播
+                if self.args.broadcaster_strategy == "affinity_cluster":
+                    self.broadcaster.affinity_cluster(sender_id, sender.model, affinity_matrix)
+                elif self.args.broadcaster_strategy == "affinity_topK":
+                    self.broadcaster.affinity_topK(sender_id, sender.model, affinity_matrix)
+                else:
+                    self.broadcaster.affinity_baseline(sender_id, sender.model, affinity_matrix)
+    # print(self.client_dic[0].broadcaster.p, self.client_dic[0].broadcaster.w)
         # print("-----广播结束-----")
 
     # 选择topk
@@ -149,6 +217,7 @@ class Trainer(object):
             client = self.client_dic[c_id]
             client.last_received_model_dict = client.received_model_dict
             client.last_received_topology_weight_dict = client.received_topology_weight_dict
+            client.last_received_w_dict = client.received_w_dict
 
     # 清空client的无用缓存(本轮topK筛选后的received_model_list)
     def clear_cache(self):
@@ -156,6 +225,7 @@ class Trainer(object):
             client = self.client_dic[c_id]
             client.received_model_dict = {}
             client.received_topology_weight_dict = {}
+            client.received_w_dict = {}
 
     ###########
     # 方法组合 #

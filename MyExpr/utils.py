@@ -4,6 +4,7 @@ import heapq
 import seaborn as sns
 import matplotlib.pyplot as plt
 import torch
+import copy
 from torch.utils.data import DataLoader
 
 # report the average Earth Mover’s Distance (EMD) between local client data and the total dataset
@@ -76,22 +77,51 @@ def cal_w(client, args):
                     received_loss = received_loss.cpu()
 
                 loss_dic[c_id] += received_loss.item()
-
+    epsilon = 1e-6
     for c_id, model in received_dic.items():
         # 计算分母
-        dif = CalDif(local_model, model, args)
-        w[c_id] = ((total_local_loss - loss_dic[c_id]) / dif)
+        dif = compute_parameter_difference(model, local_model, norm=args.model_delta_norm)
+        # dif = CalDif(local_model, model, args)
+        w[c_id] = ((total_local_loss - loss_dic[c_id]) / (dif + epsilon))
 
-        # # 计算分母
-        # dif = CalDif(local_model, model)
-        # # if loss1 <= loss2:
-        # #     w[c_id] = 0
-        # # else:
-        # #     w[c_id] = ((loss1 - loss2) / dif)
-        # # 类似于原文提到的，因为是用于计算广播价值，所以不需要去relu
-        # w[c_id] = ((loss1 - loss2) / dif)
-        # # 未用到学习率lr,实际上,后面在对w进行归一化的时候，lr项是被约掉的
     return w
+
+
+# 搬运FedFomo，功能与CalDif相同
+def compute_parameter_difference(model_a, model_b, norm='l2'):
+    """
+    Compute difference in two model parameters
+    """
+    if norm == 'l1':
+        total_diff = 0.
+        total_diff_l2 = 0.
+        # Compute L1-norm, i.e. ||w_a - w_b||_1
+        for w_a, w_b in zip(model_a.parameters(), model_b.parameters()):
+            total_diff += (w_a - w_b).norm(1).item()
+            total_diff_l2 += torch.pow((w_a - w_b).norm(2), 2).item()
+
+        return total_diff
+
+    elif norm == 'l2_root':
+        total_diff = 0.
+        for w_a, w_b in zip(model_a.parameters(), model_b.parameters()):
+            total_diff += (w_a - w_b).norm(2).item()
+        return total_diff
+
+    total_diff = 0.
+    model_a_params = []
+    for p in model_a.parameters():
+        model_a_params.append(p.detach().cpu().numpy().astype(np.float64))
+
+    for ix, p in enumerate(model_b.parameters()):
+        p_np = p.detach().cpu().numpy().astype(np.float64)
+        diff = model_a_params[ix] - p_np
+        scalar_diff = np.sum(diff ** 2)
+        total_diff += scalar_diff
+    # Can be vectorized as
+    # np.sum(np.power(model_a.parameters().detach().cpu().numpy() -
+    #                 model_a.parameters().detach().cpu().numpy(), 2))
+    return total_diff  # Returns distance^2 between two model parameters
 
 
 # 计算模型之间的欧式距离
@@ -112,9 +142,91 @@ def CalDif(model1, model2, args):
     return dif
 
 
+def get_adjacency_matrix(client, symmetric=True, shift_positive=False,
+                         normalize=True, rbf_kernel=False, rbf_delta=1.):
+    """
+    If learning federations through updated client weight preferences,
+    first compute adjacency matrix given client-to-client weights
+    Args:
+    - clients (Clients[]): list of clients <-- should be the population.clients array
+    - symmetric (bool): return a symmetric matrix
+    - shift_positive (bool): shift all values to be >= 0 (add (0 - lowest value) to everything)
+    - normalize (bool): after other transformations, normalize everything to range [0, 1]
+    - rbf_kernel (bool): apply Gaussian (RBF) kernel to the matrix
+    """
+    softmax_client_weights = True
+    p = copy.deepcopy(client.p)
+    # print(len(p), len(p[0]))
+    for i in range(len(p)):
+        p[i] = np.array(p[i], dtype=np.float64)
+        # print(p[i].type)
+    matrix = np.zeros([len(p), len(p)], dtype=np.float64)
+    for i in range(len(p)):
+        # print(matrix[i].shape, p[i].shape)
+        matrix[i] += p[i]
+    # print(matrix.dtype)
+    # print(type(matrix), type(matrix[0]))
+    for i in range(len(matrix)):
+        matrix[i] = np.array(matrix[i], dtype=np.float64)
+    matrix = np.array(matrix)
+    # print(matrix)
+    if softmax_client_weights:
+        # matrix = []
+        # for client in clients:
+        #     matrix.append(np.exp(client.w) /
+        #                   np.sum(np.exp(client.w)))
+        matrix = np.exp(matrix) / np.sum(np.exp(matrix))
+        # matrix = np.array(matrix)
+    else:
+        # matrix = np.array([client.w for client in clients])
+        # print(type(matrix), type(matrix[0]))
+        matrix = 1. - matrix  # Affinity matrix is reversed -> lower value = better
+        # matrix = np.exp(matrix)
+        # print(matrix.dtype)
+        if rbf_kernel:
+            # print(-1. * matrix ** 2 / (2. * rbf_delta ** 2))
+            # print(type(-1. * matrix ** 2 / (2. * rbf_delta ** 2)))
+            matrix = np.exp(-1. * matrix ** 2 / (2. * rbf_delta ** 2))
+    if symmetric:
+        matrix = (matrix + matrix.T) * 0.5
+    if shift_positive:
+        if np.min(matrix) < 0:
+            matrix = matrix + (0 - np.min(matrix))
+    if normalize:
+        # print("normalize")
+        matrix = matrix / (np.max(matrix) - np.min(matrix))
+    return matrix
+
+
+# 计算emd热力图
+def calc_emd_heatmap(train_data, train_idx_dict, args):
+    client_num_in_total = args.client_num_in_total
+    emd_list = np.zeros([client_num_in_total, client_num_in_total], dtype=np.float64)
+    epsilon = 1e-10
+    for c_id_from in range(client_num_in_total):
+        for c_id_to in range(client_num_in_total):
+            # if c_id_from == c_id_to:
+            #     emd_list[c_id_from][c_id_to] = 0
+            #     continue
+            train_data_from = [train_data.targets[x] for x in train_idx_dict[c_id_from]]
+            train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
+            emd = compute_emd(train_data_from, train_data_to)
+            # emd_list[c_id_from][c_id_to] = 1 / (emd + epsilon)
+            emd_list[c_id_from][c_id_to] = emd
+    # print(emd_list.shape)
+    # emd_list = emd_list - emd_list.min() / (emd_list.max() - emd_list.min())
+    # todo 这样写整个热力图色调偏冷，而权重热力图偏热，可能在下面那个循环改成倒数会好些
+    emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)
+    for c_id in range(client_num_in_total):
+        emd_list[c_id][c_id] = 0
+    return emd_list
+
+
 # 根据二维矩阵生成热力图
 def generate_heatmap(matrix, path):
     # 显示数值 square=True, annot=True
+    # print(len(matrix), len(matrix[0]))
+    # print(matrix)
     plt.matshow(matrix, cmap=plt.cm.rainbow, vmin=0, vmax=1)
     plt.colorbar()
     # plt.show()
@@ -137,8 +249,6 @@ def generate_heatmap(matrix, path):
 #     if args.local_train_stop_point <= args.comm_round:
 #         name += "-"+str(args.local_train_stop_point)+"stop"
 #     return name
-
-
 def print_debug(stdout, prefix=''):
     DEBUG = True
     if DEBUG:

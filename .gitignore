@@ -12,6 +12,9 @@ FedML/data/*.tar.gz
 FedML/data/*
 MyExpr/data/*
 
+# image
+FedML/dfl/heatmap
+
 # script
 FedML/CI-install.sh
 
