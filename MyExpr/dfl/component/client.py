@@ -1,24 +1,43 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from opacus import PrivacyEngine
 import logging
 
 class Client(object):
     def __init__(self, model, client_id, args, train_loader, validation_loader, test_loader):
-        self.model = model.to(args.device)
+        self.args = args
         self.client_id = client_id
         self.data = None
+
+        model = model.to(args.device)
+        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
+        self.privacy_engine = None
+        if self.args.enable_dp:
+            privacy_engine = PrivacyEngine(secure_mode=args.secure_rng)
+            model, optimizer, train_loader = privacy_engine.make_private(
+                module=model,
+                optimizer=optimizer,
+                data_loader=train_loader,
+                noise_multiplier=args.sigma,
+                max_grad_norm=args.max_per_sample_grad_norm
+            )
+            self.privacy_engine = privacy_engine
+
+        self.model = model
         self.train_loader = train_loader
         self.validation_loader = validation_loader
         self.test_loader = test_loader
+        self.optimizer = optimizer
+
+
         self.Softmax = nn.Softmax(dim=1)
         self.LogSoftmax = nn.LogSoftmax(dim=1)
-
         self.criterion_CE = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()), lr=args.lr)
         self.criterion_KLD = nn.KLDivLoss(reduction='batchmean')
 
-        self.args = args
+
+
         # 用于迭代获取数据
         # self.train_it = enumerate(train_loader)
         self.train_it = None
@@ -82,6 +101,7 @@ class Client(object):
                     self.w[neighbor_id] = 1. * client_initial_self_weight
 
     def local_train(self):
+        self.model.train()
         total_loss, total_correct = 0.0, 0.0
         for epoch in range(self.args.epochs):
             iteration = 0
@@ -91,6 +111,16 @@ class Client(object):
                 total_correct += correct
                 iteration += 1
             # print("client {}: local train takes {} iteration".format(self.client_id, iteration))
+        if self.args.enable_dp:
+            epsilon, best_alpha = self.privacy_engine.accountant.get_privacy_spent(
+                delta=self.args.delta
+            )
+            print(
+                f"Client: {self.client_id} \t"
+                f"Loss: {np.mean(total_loss):.6f} "
+                f"(ε = {epsilon:.2f}, δ = {self.args.delta}) for α = {best_alpha}"
+            )
+            return total_loss, total_correct, epsilon, best_alpha
         return total_loss, total_correct
 
     # 训练本地模型
@@ -111,16 +141,19 @@ class Client(object):
             loss = loss.cpu()
         # self.recorder.record_local_train_loss(self.client_id, loss.detach().numpy())
         # self.recorder.record_local_train_correct(self.client_id, correct)
+
+
         return loss.detach().numpy(), correct
 
     def deep_mutual_update_epoch_wise(self):
-        self.optimizer.zero_grad()
+        self.model.train()
         total_loss, total_correct = 0.0, 0.0
         total_KLD_loss = 0.0
         total_local_loss = 0.0
         iteration = 0
         # print(f"client[{self.client_id}]共{len(self.received_model_dict)}个client互学习参与")
         for idx, (train_X, train_Y) in enumerate(self.train_loader):
+            self.optimizer.zero_grad()
             train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
             local_outputs = self.model(train_X)
             local_loss = self.criterion_CE(local_outputs, train_Y)
@@ -136,6 +169,7 @@ class Client(object):
             KLD_loss = 0
             for neighbor_id in self.received_model_dict.keys():
                 neighbor_model = self.received_model_dict[neighbor_id]
+                neighbor_model.eval()
                 neighbor_outputs = neighbor_model(train_X)
                 kld_loss = self.criterion_KLD(self.LogSoftmax(local_outputs),
                                                self.Softmax(neighbor_outputs.detach()))
@@ -147,6 +181,7 @@ class Client(object):
             if len(self.received_model_dict) > 0:
                 KLD_loss = KLD_loss / len(self.received_model_dict)
                 local_loss += KLD_loss
+
             local_loss.backward()
             self.optimizer.step()
 
@@ -197,16 +232,26 @@ class Client(object):
         pass
 
     def test(self, test_X, test_Y):
-        with torch.no_grad():
-            test_X, test_Y = test_X.to(self.device), test_Y.to(self.device)
-            outputs = self.model(test_X)
-            loss = self.criterion_CE(outputs, test_Y)
+        # with torch.no_grad():
+        #     test_X, test_Y = test_X.to(self.device), test_Y.to(self.device)
+        #     outputs = self.model(test_X)
+        #     loss = self.criterion_CE(outputs, test_Y)
+        #
+        #     pred = outputs.argmax(dim=1)
+        #     correct = pred.eq(test_Y.view_as(pred)).sum()
+        #     if "cuda" in self.device:
+        #         loss = loss.cpu()
+        #     return loss.detach().numpy(), correct
+        self.model.eval()
+        test_X, test_Y = test_X.to(self.device), test_Y.to(self.device)
+        outputs = self.model(test_X)
+        loss = self.criterion_CE(outputs, test_Y)
 
-            pred = outputs.argmax(dim=1)
-            correct = pred.eq(test_Y.view_as(pred)).sum()
-            if "cuda" in self.device:
-                loss = loss.cpu()
-            return loss.detach().numpy(), correct
+        pred = outputs.argmax(dim=1)
+        correct = pred.eq(test_Y.view_as(pred)).sum()
+        if "cuda" in self.device:
+            loss = loss.cpu()
+        return loss.detach().numpy(), correct
 
 
 

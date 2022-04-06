@@ -31,9 +31,11 @@ class Broadcaster(object):
         # 记录客户之间的通信频率
         self.broadcast_freq = None
 
+
     def register_recorder(self, recorder):
         self.recorder = recorder
 
+    # todo 要改p，w的类型
     def initialize(self):
         if self.strategy == "affinity":
             # 初始化权重矩阵，不连通的边用-1填充
@@ -87,7 +89,7 @@ class Broadcaster(object):
                 num += 1
         # print("client {} has {} neighbors".format(sender_id, num))
 
-    # 对affinity采用谱聚类
+    # 对affinity采用谱聚类（不合适，存在bug）
     def affinity_cluster(self, sender_id, model, affinity_matrix=None):
         args = self.args
 
@@ -101,8 +103,11 @@ class Broadcaster(object):
         sender = client_dic[sender_id]
 
         if affinity_matrix is None:
-            if sender_id not in sender.last_received_model_dict:
-                sender.last_received_model_dict[sender_id] = sender.model
+            # 忽略自身模型
+            if sender_id in sender.last_received_model_dict:
+                print(f"异常：client {sender_id} 上一轮接收到了自己")
+            # if sender_id not in sender.last_received_model_dict:
+            #     sender.last_received_model_dict[sender_id] = sender.model
             # print(sender.p)
             new_w = cal_w(sender, self.recorder.args)
             new_w_list = []
@@ -120,19 +125,31 @@ class Broadcaster(object):
                 normalization_factor += 1e-9
             new_w_list = np.array(new_w_list) / normalization_factor
 
+            # 固定自身权重为最高
+            new_w_list[sender_id] = np.max(new_w_list)
+
             sender.p[sender.client_id] += new_w_list
             sender.w = new_w_list
 
             # 聚合上一轮接收到的权重
             print(f"client {sender_id} 上一轮接收到 {sender.last_received_w_dict.keys()} 的权重")
+            # print(f"==新权重为: {new_w_list}")
             for neighbor_id in sender.last_received_w_dict:
                 sender.p[neighbor_id] += sender.last_received_w_dict[neighbor_id]
+
+            # 固定自身权重为最高
+            for c_id in range(len(sender.p)):
+                sender.p[c_id][c_id] = np.max(sender.p)
 
             # 根据p生成affinity矩阵
             affinity_matrix = get_adjacency_matrix(sender)
 
         sender.affinity_matrix = affinity_matrix
-
+        # 检查矩阵是否正常
+        # for c_id in range(args.client_num_in_total):
+        #     if affinity_matrix[c_id][c_id] != np.max(affinity_matrix):
+        #         print("AFFINITY ERROR")
+        # print(affinity_matrix)
         # 聚类
         clustering = SpectralClustering(n_clusters=args.num_distributions,
                                         affinity='precomputed',
@@ -145,12 +162,13 @@ class Broadcaster(object):
         for ix, label in enumerate(federation_labels):
             if ix == sender_id:
                 sender_label = label
-            self.clients_per_federation[label].append(
+            clients_per_federation[label].append(
                 client_dic[ix])
         # 转发
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         # print(f"client {sender_id} are in the same distribution of clients: {[c.client_id for c in self.clients_per_federation[sender_label]]}，权重w={sender.w}")
         print(f"client {sender_id} are in the same distribution of clients: {[c.client_id for c in clients_per_federation[sender_label]]}")
+        # print(f"affinity matrix minimum: {np.min(sender.affinity_matrix)}")
         # print(f"p matrix is {sender.p} \n ===================")
         # print(f"affinity matrix is {sender.affinity_matrix}")
         for receiver in clients_per_federation[sender_label]:
@@ -192,6 +210,8 @@ class Broadcaster(object):
                 normalization_factor += 1e-9
             new_w_list = np.array(new_w_list) / normalization_factor
 
+            # 固定自身权重为最高
+            new_w_list[sender_id] = np.max(new_w_list)
             sender.p[sender.client_id] += new_w_list
             sender.w = new_w_list
 
@@ -217,15 +237,17 @@ class Broadcaster(object):
             if topology[neighbor_id] == 0:
                 continue
             candidate.append(neighbor_id)
-        # 自身权重最大化
-        # for c_id in range(self.args.client_num_in_total):
-        #     sender.p[c_id][c_id] = sender.p.max()
 
-        topK = heapq.nlargest(self.args.num_clients_per_dist, candidate, lambda x: sender.affinity_matrix[sender_id][x])
+        # 自身权重最大化
+        for c_id in range(self.args.client_num_in_total):
+            sender.p[c_id][c_id] = sender.p.max()
+
+        # topK = heapq.nlargest(self.args.num_clients_per_dist, candidate, lambda x: sender.affinity_matrix[sender_id][x])
+        topK = heapq.nlargest(10, candidate, lambda x: sender.affinity_matrix[sender_id][x])
 
         # 转发
         print(f"client {sender_id} are prone to be in the same distributions with {topK}")
-        print(f"client {sender_id} has affinity_matrix : {sender.affinity_matrix[sender_id]}")
+        # print(f"client {sender_id} has affinity_matrix : {sender.affinity_matrix[sender_id]}")
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for receiver_id in topK:
             # print(f"发送给client {receiver.client_id}")

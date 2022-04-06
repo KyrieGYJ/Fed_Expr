@@ -24,25 +24,38 @@ class TopKSelector(object):
 
     def top_k_by_loss_epoch_wise(self, host):
         heap = []
-        iteration = 0
         loss_dic = {}
 
         for index in host.received_model_dict:
             loss_dic[index] = 0
 
-        with torch.no_grad():
-            for idx, (val_X, val_Y) in enumerate(host.validation_loader):
-                val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
-                for index in host.received_model_dict:
-                    neighbor_model = host.received_model_dict[index]
-                    outputs = neighbor_model(val_X)
-                    loss = host.criterion_CE(outputs, val_Y)
+        # with torch.no_grad():
+        #     for idx, (val_X, val_Y) in enumerate(host.validation_loader):
+        #         val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
+        #         for index in host.received_model_dict:
+        #             neighbor_model = host.received_model_dict[index]
+        #             outputs = neighbor_model(val_X)
+        #             loss = host.criterion_CE(outputs, val_Y)
+        #
+        #             if "cuda" in self.recorder.args.device:
+        #                 loss = loss.cpu()
+        #
+        #             loss_dic[index] += loss.item()
+        #             iteration += 1
 
-                    if "cuda" in self.recorder.args.device:
-                        loss = loss.cpu()
+        for idx, (val_X, val_Y) in enumerate(host.validation_loader):
+            val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
+            for index in host.received_model_dict:
+                neighbor_model = host.received_model_dict[index]
 
-                    loss_dic[index] += loss.item()
-                    iteration += 1
+                neighbor_model.eval()
+                outputs = neighbor_model(val_X)
+                loss = host.criterion_CE(outputs, val_Y)
+
+                if "cuda" in self.recorder.args.device:
+                    loss = loss.cpu()
+
+                loss_dic[index] += loss.item()
 
         for index in host.received_model_dict:
             heap.append([index, loss_dic[index]])

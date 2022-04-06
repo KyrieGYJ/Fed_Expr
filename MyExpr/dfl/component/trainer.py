@@ -42,15 +42,15 @@ class Trainer(object):
         self.strategy = None
         self.use(args.trainer_strategy)
         # non_iid测试方法
-        if args.data_distribution == "non-iid_pathological":
+        if args.data_distribution in ["non-iid_pathological", "non-iid_pathological2"]:
             self.non_iid_test = self.non_iid_test_pathological
-        elif args.data_distribution == "non-iid_latent":
-            self.non_iid_test = self.non_iid_test_latent
-        elif args.data_distribution == "non-iid_latent2":
+        elif args.data_distribution in ["non-iid_latent", "non-iid_latent2"]:
             self.non_iid_test = self.non_iid_test_latent
 
-        # decrapted
         self.distributions = None
+
+        # 权重更新策略（沿用，缺省）
+        self.p_update_strategy = "reuse"
 
     def register_recorder(self, recorder):
         self.recorder = recorder
@@ -88,9 +88,11 @@ class Trainer(object):
             client = self.client_dic[c_id]
             client.broadcast()
             # print("client {} 广播完毕".format(c_id))
+
         # 如果是affinity算法，第一轮是flood广播。接收到第一轮的neighbor模型后，要计算初始权重，然后再广播出去，聚合接收到的所有权重，生成初始的affinity矩阵。
         if self.args.broadcaster_strategy in ["affinity_cluster", "affinity_baseline", "affinity_topK"] and self.recorder.rounds == 0:
             print("额外初始化affinity矩阵。。。")
+
             # 缓存flood阶段接收到的模型
             for c_id in self.client_dic:
                 client = self.client_dic[c_id]
@@ -101,8 +103,13 @@ class Trainer(object):
             for sender_id in self.client_dic:
                 client_dic = self.recorder.client_dic
                 sender = client_dic[sender_id]
-                if sender_id not in sender.last_received_model_dict:
-                    sender.last_received_model_dict[sender_id] = sender.model
+
+                if len(sender.last_received_model_dict) != self.args.topology_neighbors_num_undirected - 1:
+                    print("flood error1")
+
+                # 忽略自身
+                # if sender_id not in sender.last_received_model_dict:
+                #     sender.last_received_model_dict[sender_id] = sender.model
                 # print(sender.p)
                 new_w = cal_w(sender, self.recorder.args)
                 new_w_list = []
@@ -111,16 +118,16 @@ class Trainer(object):
                         new_w_list.append(new_w[i])
                     else:
                         new_w_list.append(0)
-                # print(new_w_list)
-
                 normalization_factor = np.abs(np.sum(new_w_list))
-
                 if normalization_factor < 1e-9:
                     print('Normalization factor is really small')
                     normalization_factor += 1e-9
                 new_w_list = np.array(new_w_list) / normalization_factor
 
-                sender.p[sender.client_id] += new_w_list
+                # 固定自身权重为最高
+                new_w_list[sender_id] = np.max(new_w_list)
+
+                sender.p[sender_id] += new_w_list
                 sender.w = new_w_list
 
             # flood广播权重
@@ -128,22 +135,27 @@ class Trainer(object):
                 sender = self.client_dic[sender_id]
                 sender.broadcast()
 
-            # 聚合上一轮接收到的权重
+            # 所有client聚合上一轮接收到的权重
             print("根据接收到的邻居权重计算affinity矩阵，根据affinity聚类重新广播")
             for sender_id in self.client_dic:
                 sender = self.client_dic[sender_id]
                 # print(f"client {sender_id} 接收到 {sender.received_w_dict.keys()} 的权重")
                 for neighbor_id in sender.received_w_dict:
                     sender.p[neighbor_id] += sender.received_w_dict[neighbor_id]
-                # 防止flood广播的缓存影响接下来的affinity广播
-                sender.received_w_dict = {}
 
-            # 计算affinity矩阵
+                # 固定自身权重为最高
+                for c_id in range(len(sender.p)):
+                    sender.p[c_id][c_id] = np.max(sender.p)
+
+            # 防止flood广播的缓存影响接下来的affinity广播
+            self.clear_cache()
+
+            # 计算affinity矩阵，并采用affinity算法广播旧权重
             for sender_id in self.client_dic:
                 sender = self.client_dic[sender_id]
                 # 计算affinity矩阵
                 affinity_matrix = get_adjacency_matrix(sender)
-                # print(sender.p)
+                # print(affinity_matrix)
                 # 根据affinity矩阵直接广播
                 if self.args.broadcaster_strategy == "affinity_cluster":
                     self.broadcaster.affinity_cluster(sender_id, sender.model, affinity_matrix)
@@ -163,14 +175,21 @@ class Trainer(object):
         # print("-----选择topK结束-----")
 
     # 本地训练
-    def local(self):
+    def local(self, turn_on_wandb=True):
         rounds = self.recorder.rounds
         # print("-----开始本地训练-----")
         total_loss, total_correct = 0.0, 0.0
+        # todo dp
+        total_epsilon, total_alpha = 0.0, 0.0
         total_batch_num = 0
         for c_id in self.client_dic:
             # print("{}：开始训练".format(c_id))
-            loss, correct = self.client_dic[c_id].local_train()
+            if self.args.enable_dp:
+                loss, correct, epsilon, alpha = self.client_dic[c_id].local_train()
+                total_epsilon += epsilon
+                total_alpha += alpha
+            else:
+                loss, correct = self.client_dic[c_id].local_train()
             total_loss += loss
             total_correct += correct
             total_batch_num += len(self.client_dic[c_id].train_loader)
@@ -178,12 +197,16 @@ class Trainer(object):
 
         avg_local_train_loss, local_train_acc = total_loss / total_batch_num, total_correct / (
                     total_batch_num * self.args.batch_size)
+        avg_local_train_epsilon, avg_local_train_alpha = total_epsilon / len(self.client_dic), total_alpha / len(self.client_dic)
+
+        if self.args.enable_dp:
+            print(f"avg_local_train_epsilon:{avg_local_train_epsilon}, avg_local_train_alpha:{avg_local_train_alpha}")
 
         print("avg_local_train_loss:{}, local_train_acc:{}".
               format(avg_local_train_loss, local_train_acc))
 
         # print("-----上传至wandb-----")
-        if self.args.turn_on_wandb:
+        if self.args.turn_on_wandb and turn_on_wandb:
             wandb.log(step=rounds, data={"avg_local_train_loss": avg_local_train_loss, "local_train_acc": local_train_acc})
 
     # 互学习更新
@@ -211,13 +234,19 @@ class Trainer(object):
             wandb.log(step=rounds, data={"avg_mutual_train_loss": avg_mutual_train_loss,
                                          "mutual_train_acc": mutual_train_acc})
 
-    # 缓存本轮接收到的模型（直接覆盖旧数据）
+    # 缓存本轮接收到的模型(覆盖或更新)
     def cache_received(self):
         for c_id in self.client_dic:
             client = self.client_dic[c_id]
-            client.last_received_model_dict = client.received_model_dict
-            client.last_received_topology_weight_dict = client.received_topology_weight_dict
-            client.last_received_w_dict = client.received_w_dict
+            if self.p_update_strategy == "reuse":
+                for received_id in client.received_model_dict:
+                    client.last_received_topology_weight_dict[received_id] = client.received_model_dict[received_id]
+                    client.last_received_topology_weight_dict[received_id] = client.received_topology_weight_dict[received_id]
+                    client.last_received_w_dict[received_id] = client.received_w_dict[received_id]
+            else:
+                client.last_received_model_dict = client.received_model_dict
+                client.last_received_topology_weight_dict = client.received_topology_weight_dict
+                client.last_received_w_dict = client.received_w_dict
 
     # 清空client的无用缓存(本轮topK筛选后的received_model_list)
     def clear_cache(self):

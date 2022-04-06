@@ -12,10 +12,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../FedML")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../")))
 
+
 from fedml_api.standalone.decentralized.topology_manager import TopologyManager
 
 from MyExpr.dfl.model.model_builder import get_model_builder
-from MyExpr.dfl.Args import add_args
+from MyExpr.dfl.args import add_args
 from MyExpr.dfl.component.client import Client
 from MyExpr.dfl.component.top_k import TopKSelector
 from MyExpr.dfl.component.broadcaster import Broadcaster
@@ -57,26 +58,14 @@ print("**********finishing topology generation**********")
 data = Data(args)
 data.generate_loader()
 
-# # 临时这么写方便，todo 后续有需要再改
-# if args.data_distribution == "non-iid_pathological":
-#     # print("length of test_all: {}".format(len(test_all)))
-#     # print("length of test_non_iid: {}".format(len(test_non_iid[0])))
-#     # todo 这一堆初始化都要改掉
-#     trainer.test_non_iid = data.test_non_iid
-#     trainer.client_class_dic = data.client_class_dic
-#     trainer.class_client_dic = data.class_client_dic
-# elif args.data_distribution == "non-iid_latent":
-#     # 加载出non-iid数据字典
-#     trainer.dist_client_dict = data.dist_client_dict
-#     trainer.test_non_iid = data.test_non_iid
-
 client_dic = {}
 recorder = Recorder(client_dic, topology_manager, trainer, broadcaster, topK_selector, data, args)
 
 # 选择网络
 model_builder = get_model_builder(args)
 
-
+if args.enable_dp:
+    print("开启差分隐私")
 # 7、初始化client, 选择搭载模型等
 print("初始化clients...", end="")
 train_loader, validation_loader, test_loader = data.train_loader, data.validation_loader, data.test_loader
@@ -111,6 +100,32 @@ if args.turn_on_wandb:
                entity="kyriegyj",
                name=name,
                config=args)
+
+#################################
+# local train before federation #
+#################################
+precomputed = False
+
+if precomputed:
+    print("use pretrained model")
+    # model_dict_fname = f"./precomputed/{args.model}_{args.client_num_in_total}"
+    model_dict_fname = f"./precomputed/{args.model}_{args.client_num_in_total}_pathological2"
+    model_dict = {i : None for i in range(args.client_num_in_total)}
+
+    try:
+        model_dict = torch.load(model_dict_fname)
+        print(f'model dictionary model loaded from {model_dict_fname}')
+    except:
+        print(f'no model dictionary was found, newly train {model_dict_fname}')
+        pretrain_epoch = 30
+        for E in range(pretrain_epoch):
+            trainer.local(False)
+        for i in range(args.client_num_in_total):
+            model_dict[i] = client_dic[i].model
+        torch.save(model_dict, model_dict_fname)
+
+    for i in range(args.client_num_in_total):
+        client_dic[i].model= model_dict[i]
 
 ###############################
 # 1 communication per E epoch #

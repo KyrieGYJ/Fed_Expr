@@ -58,7 +58,7 @@ def cal_w(client, args):
         loss_dic[c_id] = 0.0
 
     with torch.no_grad():
-
+        local_model.eval()
         for data, label in val_dataloader:
             data, label = data.to(args.device), label.to(args.device)
             local_outputs = local_model(data)
@@ -70,6 +70,7 @@ def cal_w(client, args):
             total_local_loss += local_loss.item()
 
             for c_id, model in received_dic.items():
+                model.eval()
                 received_outputs = model(data)
                 received_loss = criterion(received_outputs, label)
 
@@ -77,12 +78,18 @@ def cal_w(client, args):
                     received_loss = received_loss.cpu()
 
                 loss_dic[c_id] += received_loss.item()
+
+    loss_only = True
     epsilon = 1e-6
     for c_id, model in received_dic.items():
         # 计算分母
-        dif = compute_parameter_difference(model, local_model, norm=args.model_delta_norm)
         # dif = CalDif(local_model, model, args)
-        w[c_id] = ((total_local_loss - loss_dic[c_id]) / (dif + epsilon))
+        if loss_only:
+            w[c_id] = total_local_loss - loss_dic[c_id]
+        else:
+            dif = compute_parameter_difference(model, local_model, norm=args.model_delta_norm)
+            print(f"model_dif: {dif}, loss_delta:{total_local_loss - loss_dic[c_id]}")
+            w[c_id] = ((total_local_loss - loss_dic[c_id]) / (dif + epsilon))
 
     return w
 
@@ -142,7 +149,7 @@ def CalDif(model1, model2, args):
     return dif
 
 
-def get_adjacency_matrix(client, symmetric=True, shift_positive=False,
+def get_adjacency_matrix1(client, symmetric=True, shift_positive=False,
                          normalize=True, rbf_kernel=False, rbf_delta=1.):
     """
     If learning federations through updated client weight preferences,
@@ -154,35 +161,15 @@ def get_adjacency_matrix(client, symmetric=True, shift_positive=False,
     - normalize (bool): after other transformations, normalize everything to range [0, 1]
     - rbf_kernel (bool): apply Gaussian (RBF) kernel to the matrix
     """
-    softmax_client_weights = True
+    # 不能用softmax， 太低了
+    softmax_client_weights = False
     p = copy.deepcopy(client.p)
-    # print(len(p), len(p[0]))
-    for i in range(len(p)):
-        p[i] = np.array(p[i], dtype=np.float64)
-        # print(p[i].type)
-    matrix = np.zeros([len(p), len(p)], dtype=np.float64)
-    for i in range(len(p)):
-        # print(matrix[i].shape, p[i].shape)
-        matrix[i] += p[i]
-    # print(matrix.dtype)
-    # print(type(matrix), type(matrix[0]))
-    for i in range(len(matrix)):
-        matrix[i] = np.array(matrix[i], dtype=np.float64)
-    matrix = np.array(matrix)
+    matrix = np.array(p)
     # print(matrix)
     if softmax_client_weights:
-        # matrix = []
-        # for client in clients:
-        #     matrix.append(np.exp(client.w) /
-        #                   np.sum(np.exp(client.w)))
         matrix = np.exp(matrix) / np.sum(np.exp(matrix))
-        # matrix = np.array(matrix)
     else:
-        # matrix = np.array([client.w for client in clients])
-        # print(type(matrix), type(matrix[0]))
-        matrix = 1. - matrix  # Affinity matrix is reversed -> lower value = better
-        # matrix = np.exp(matrix)
-        # print(matrix.dtype)
+        # matrix = 1. - matrix  # Affinity matrix is reversed -> lower value = better
         if rbf_kernel:
             # print(-1. * matrix ** 2 / (2. * rbf_delta ** 2))
             # print(type(-1. * matrix ** 2 / (2. * rbf_delta ** 2)))
@@ -194,7 +181,30 @@ def get_adjacency_matrix(client, symmetric=True, shift_positive=False,
             matrix = matrix + (0 - np.min(matrix))
     if normalize:
         # print("normalize")
+        # 也不能用normalize，会出现infs or NaNs
         matrix = matrix / (np.max(matrix) - np.min(matrix))
+    return matrix
+
+
+def get_adjacency_matrix(client, softmax_client_weights=False, symmetric=True, shift_positive=False,
+                         normalize=True, rbf_kernel=False, rbf_delta=1.):
+    p = copy.deepcopy(client.p)
+    matrix = np.array(p)
+    # 不能用因为矩阵总的exp和比较大，相除后每一项会特别小
+    if softmax_client_weights:
+        matrix = np.exp(matrix) / np.sum(np.exp(matrix))
+        # print(f"softmax matrix{matrix}")
+    if symmetric:
+        matrix = (matrix + matrix.T) * 0.5
+    # 开启后矩阵中的值会非常高，整个图偏红
+    if shift_positive:
+        if np.min(matrix) < 0:
+            matrix = matrix + (0 - np.min(matrix))
+        # print(f"shift positive matrix{matrix}"
+    if normalize:
+        # print("normalize")
+        matrix = matrix - np.min(matrix) / (np.max(matrix) - np.min(matrix))
+        # print(f"normalize matrix{matrix}")
     return matrix
 
 
@@ -217,8 +227,8 @@ def calc_emd_heatmap(train_data, train_idx_dict, args):
     # emd_list = emd_list - emd_list.min() / (emd_list.max() - emd_list.min())
     # todo 这样写整个热力图色调偏冷，而权重热力图偏热，可能在下面那个循环改成倒数会好些
     emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)
-    for c_id in range(client_num_in_total):
-        emd_list[c_id][c_id] = 0
+    # for c_id in range(client_num_in_total):
+    #     emd_list[c_id][c_id] = 0
     return emd_list
 
 

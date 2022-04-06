@@ -84,7 +84,7 @@ def add_args():
 
     parser.add_argument('--shards_per_user', type=int, default=2, help="2, 3, 4, 5, 10")
 
-    parser.add_argument('--model_delta_norm', default='l1', type=str,
+    parser.add_argument('--model_delta_norm', default='l2_root', type=str,
                         help="Which norm to use in FedFomo update, from ('l1' | 'l2' | 'l2_root')")
 
     # latent-non-iid中的分布数量
@@ -97,6 +97,35 @@ def add_args():
     parser.add_argument('--local_train_stop_point', type=int, default=99999999,
                         help="communication round where local train stop")
 
+    ########################
+    # differential privacy #
+    ########################
+    parser.add_argument('--enable_dp', type=bool, default=False, help="enable training with differential privacy")
+    # noise multiplier
+    parser.add_argument('--sigma', type=float, default=1.0,
+                        help="varying levels of Gaussian noise tolerance, "
+                             "higher sigma enable more noisy updates and greater privacy (lower ε), "
+                             "at the potential cost of performance.")
+    # delta
+    parser.add_argument(
+        "--delta",
+        type=float,
+        default=1e-5,
+        metavar="D",
+        help="Target delta, At fixed δ, we wish to obtain high classification accuracy and low ε.",
+    )
+
+    # todo 不太懂这个参数
+    parser.add_argument('-c', '--max_per_sample_grad_norm', default=1.0, type=float,
+                        help="clip per-sample gradients to this norm (default 1.0)")
+
+    # todo 不太懂这个参数
+    parser.add_argument(
+            "--secure-rng",
+            action="store_true",
+            default=False,
+            help="Enable Secure RNG to have trustworthy privacy guarantees. Comes at a performance cost",
+    )
     # debug
     parser.add_argument('--turn_on_wandb', type=bool, default=True,
                         help="communication round where local train stop")

@@ -1,3 +1,4 @@
+
 """
 Train an initial model to compute non-IID client datasets based on the latent representations of samples.
 """
@@ -11,34 +12,38 @@ from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from torchvision.models import vgg11_bn
 
 from tqdm import tqdm
-
+#
 # from federated.configs import cfg_fl as cfg
 # from federated.network import BaseConvNet, adjust_model_layers
 
 
 def get_embeddings(train_set, test_set, num_epochs, args,
                    stopping_threshold=5):
-    # if args.device is None:
-    #     args.device = torch.device('cuda:0')
-    root_dir = "./../data"
+    if args.device is None:
+        args.device = torch.device('cuda:0')
     net = vgg11_bn(pretrained=True, progress=True)
     net.classifier[6] = nn.Linear(4096, args.num_classes)
     # optimizer = optim.Adam(net.parameters(), lr=0.0001)
-    lr, momentum, weight_decay = 0.001, 0.9, 1e-4
+    lr = 0.001
+    momentum = 0.9
+    weight_decay = 1e-4
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum,
                           weight_decay=weight_decay)
+
     criterion = nn.CrossEntropyLoss()
 
     print(f'> Computing model embeddings to setup latent non-IID federated datasets...')
-    train_losses, test_losses = [], []
-    min_test_loss_avg, early_stopping_counter = 1e10, 0  # For early stopping
+    train_losses = []
+    test_losses = []
+    min_test_loss_avg = 1e10  # For early stopping
+    early_stopping_counter = 0
 
-    train_loader = DataLoader(train_set, batch_size=args.batch_size,
+    train_loader = DataLoader(train_set, batch_size=64,
                               shuffle=True, num_workers=args.num_workers)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size,
+    test_loader = DataLoader(test_set, batch_size=64,
                              shuffle=False, num_workers=args.num_workers)
 
-    model_name = f'{root_dir}/models/{args.dataset}/setup_model-e={num_epochs - 1}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
+    model_name = f'./../data/models/{args.dataset}/setup_model-e={num_epochs - 1}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
 
     try:
         net.load_state_dict(torch.load(model_name))
@@ -68,16 +73,16 @@ def get_embeddings(train_set, test_set, num_epochs, args,
 
             if early_stopping_counter == stopping_threshold:
                 # Save model, end
-                model_name = f'{root_dir}/models/{args.dataset}/setup_model-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
+                model_name = f'./../data/models/{args.dataset}/setup_model-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
                 torch.save(net.state_dict(), model_name)
                 break
 
             # Save model at end of each epoch regardless
-            model_name = f'{root_dir}/models/{args.dataset}/setup_model-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
+            model_name = f'./../data/models/{args.dataset}/setup_model-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
             torch.save(net.state_dict(), model_name)
 
         if early_stopping_counter < stopping_threshold:
-            model_name = f'{root_dir}/models/{args.dataset}/setup_model-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
+            model_name = f'./../data/models/{args.dataset}/setup_model-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}.pt'
             torch.save(net.state_dict(), model_name)
 
     # Compute and save training and test embeddings
@@ -89,10 +94,10 @@ def get_embeddings(train_set, test_set, num_epochs, args,
     train_embedding_fname = f'embeddings-d={args.dataset}-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}-fc2-train.npy'
     test_embedding_fname = f'embeddings-d={args.dataset}-e={epoch}-st={stopping_threshold}-lr={lr}-mo={momentum}-wd={weight_decay}-fc2-test.npy'
 
-    with open(f'{root_dir}/precomputed/{train_embedding_fname}', 'wb') as f:
+    with open(f'./../data/precomputed/{train_embedding_fname}', 'wb') as f:
         np.save(f, train_embeddings)
     print(f'> Saved FL setup train embeddings to ./precomputed/{train_embedding_fname}!')
-    with open(f'{root_dir}/precomputed/{test_embedding_fname}', 'wb') as f:
+    with open(f'./../data/precomputed/{test_embedding_fname}', 'wb') as f:
         np.save(f, test_embeddings)
     print(f'> Saved FL setup test embeddings to ./precomputed/{test_embedding_fname}!')
     return train_embeddings, test_embeddings
@@ -174,7 +179,7 @@ def compute_embeddings(net, dataset, args, split):
     correct = 0
 
     dataloader = DataLoader(dataset, batch_size=50,
-                            shuffle=True, num_workers=args.num_workers)
+                            shuffle=False, num_workers=args.num_workers)
 
     net.eval()
     net.to(args.device)
@@ -209,16 +214,13 @@ def compute_embeddings(net, dataset, args, split):
             total_embeddings[ix] = output.detach().cpu().numpy().squeeze()
 
         #         total_embeddings = [e.flatten() for e in total_embeddings]
-        # print(len(total_embeddings), total_embeddings[0].shape)
-        # print(len(dataloader))
         n_samples = len(dataset.targets)
-        # todo 垃圾东西，不能跟任意batch_size兼容
         total_embeddings_fc1 = np.stack(total_embeddings[0::3]).reshape((n_samples, -1))
         total_embeddings_fc2 = np.stack(total_embeddings[1::3]).reshape((n_samples, -1))
         total_embeddings_fc3 = np.stack(total_embeddings[2::3]).reshape((n_samples, -1))
 
         num_samples = len(dataset.targets)
-        # total_embeddings_fc1
+        total_embeddings_fc1
         print(total_embeddings_fc1.shape)
         print(total_embeddings_fc2.shape)
         print(total_embeddings_fc3.shape)
@@ -227,3 +229,5 @@ def compute_embeddings(net, dataset, args, split):
 
     # total_embeddings = np.concatenate(total_embeddings)
     return total_embeddings_fc1, total_embeddings_fc2, total_embeddings_fc3
+
+

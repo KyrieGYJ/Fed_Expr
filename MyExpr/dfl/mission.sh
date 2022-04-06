@@ -47,11 +47,14 @@ nohup bash run.sh 0.01 "BaseConvNet" 1 64  100 "cuda:1" "local_and_mutual" "loss
 #rm BCN_50n_aff_30stop.log
 #rm BCN_100n_aff_30stop.log
 
-bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_latent2" 2 15 999 "test2"
+bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_pathological2" 20 15 999 "test2"
+
+bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_latent2" 20 15 999 "test2"
+
 
 bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_baseline" "non-iid_latent2" 20 15 999 "test4"
 
-bash run.sh 0.01 "BaseConvNet" 5 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_cluster" "non-iid_latent2" 20 15 999 "test3"
+bash run.sh 0.01 "BaseConvNet" 1 64 15 "cuda:3" "local_and_mutual" "loss" "affinity_cluster" "non-iid_latent2" 20 15 999 "test5"
 
 # baseline
 # local
