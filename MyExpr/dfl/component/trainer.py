@@ -100,10 +100,10 @@ class Trainer(object):
             print("额外初始化affinity矩阵。。。")
 
             # 缓存flood阶段接收到的模型
-            for c_id in self.client_dic:
-                client = self.client_dic[c_id]
-                client.last_received_model_dict = client.received_model_dict
-                client.last_received_topology_weight_dict = client.received_topology_weight_dict
+            # for c_id in self.client_dic:
+            #     client = self.client_dic[c_id]
+            #     client.last_received_model_dict = client.received_model_dict
+            #     client.last_received_topology_weight_dict = client.received_topology_weight_dict
 
 
             # 计算权重
@@ -142,6 +142,7 @@ class Trainer(object):
                 sender = self.client_dic[sender_id]
                 # print(f"client {sender_id} 接收到 {sender.received_w_dict.keys()} 的权重")
                 for neighbor_id in sender.received_w_dict:
+                    # sender.p[neighbor_id] += sender.last_received_w_dict[neighbor_id]
                     sender.p[neighbor_id] += sender.received_w_dict[neighbor_id]
 
                 # print(sender.p)
@@ -200,6 +201,7 @@ class Trainer(object):
         total_num *= self.args.epochs
         # print(total_num)
         local_train_acc = total_correct / total_num
+        total_loss /= self.args.epochs # 要除epochs，不然不方便横向对比
         avg_local_train_epsilon, avg_local_train_alpha = total_epsilon / len(self.client_dic), total_alpha / len(self.client_dic)
 
         if self.args.enable_dp:
@@ -244,26 +246,26 @@ class Trainer(object):
                                          "mutual/train_acc": mutual_train_acc})
 
     # 缓存本轮接收到的模型(覆盖或更新)
-    def cache_received(self):
-        for c_id in self.client_dic:
-            client = self.client_dic[c_id]
-            if self.p_update_strategy == "reuse":
-                for received_id in client.received_model_dict:
-                    client.last_received_topology_weight_dict[received_id] = client.received_model_dict[received_id]
-                    client.last_received_topology_weight_dict[received_id] = client.received_topology_weight_dict[received_id]
-                    client.last_received_w_dict[received_id] = client.received_w_dict[received_id]
-            else:
-                client.last_received_model_dict = client.received_model_dict
-                client.last_received_topology_weight_dict = client.received_topology_weight_dict
-                client.last_received_w_dict = client.received_w_dict
+    # def cache_received(self):
+    #     for c_id in self.client_dic:
+    #         client = self.client_dic[c_id]
+    #         if self.p_update_strategy == "reuse":
+    #             for received_id in client.received_model_dict:
+    #                 client.last_received_topology_weight_dict[received_id] = client.received_model_dict[received_id]
+    #                 client.last_received_topology_weight_dict[received_id] = client.received_topology_weight_dict[received_id]
+    #                 client.last_received_w_dict[received_id] = client.received_w_dict[received_id]
+    #         else:
+    #             client.last_received_model_dict = client.received_model_dict
+    #             client.last_received_topology_weight_dict = client.received_topology_weight_dict
+    #             client.last_received_w_dict = client.received_w_dict
 
     # 清空client的无用缓存(本轮topK筛选后的received_model_list)
-    def clear_cache(self):
-        for c_id in self.client_dic:
-            client = self.client_dic[c_id]
-            client.received_model_dict = {}
-            client.received_topology_weight_dict = {}
-            client.received_w_dict = {}
+    # def clear_cache(self):
+    #     for c_id in self.client_dic:
+    #         client = self.client_dic[c_id]
+    #         client.received_model_dict = {}
+    #         client.received_topology_weight_dict = {}
+    #         client.received_w_dict = {}
 
     ###########
     # 方法组合 #
@@ -281,14 +283,14 @@ class Trainer(object):
         self.broadcast()
 
         # 在这里缓存received_model，避免后续被topK删减
-        self.cache_received()
+        # self.cache_received()
 
         # self.select_topK()
 
         self.mutual_update()
 
         # 因为已经缓存过了，这里只清空本轮记录
-        self.clear_cache()
+        # self.clear_cache()
 
     # 仅进行互学习
     def mutual(self):
@@ -298,14 +300,14 @@ class Trainer(object):
         self.broadcast()
 
         # 在这里缓存received，避免后续被topK删减
-        self.cache_received()
+        # self.cache_received()
 
-        self.select_topK()
+        # self.select_topK()
 
         self.mutual_update()
 
         # 因为已经缓存过了，这里只清空本轮记录
-        self.clear_cache()
+        # self.clear_cache()
 
     # 模型插值
     def model_interpolation(self):

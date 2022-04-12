@@ -49,7 +49,8 @@ def cal_raw_w(client, args, loss_only = True, model_distance_adjust=False):
     criterion = client.criterion_CE
     val_dataloader = client.validation_loader
     local_model = client.model
-    received_dic = client.last_received_model_dict
+    # received_dic = client.last_received_model_dict
+    received_dic = client.received_model_dict
 
     epsilon = 1e-6
     total_local_loss = 0.0
@@ -89,9 +90,10 @@ def cal_raw_w(client, args, loss_only = True, model_distance_adjust=False):
 
 def cal_model_dif(client, args, normalize=True, norm_type="l2_root"):
     local_model = client.model
-    received_dic = client.last_received_model_dict
+    # received_dic = client.last_recteived_model_dict
+    received_dict = client.received_model_dict
     dif_dict = {}
-    for c_id, model in received_dic.items():
+    for c_id, model in received_dict.items():
         dif = compute_parameter_difference(local_model, model, norm=norm_type)
         dif_dict[c_id] = dif
     return dif_dict

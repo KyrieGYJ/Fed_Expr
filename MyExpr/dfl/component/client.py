@@ -65,9 +65,9 @@ class Client(object):
         #####################################
         # cache of last communication round #
         #####################################
-        self.last_received_model_dict = {}
-        self.last_received_topology_weight_dict = {}
-        self.last_received_w_dict = {}
+        # self.last_received_model_dict = {}
+        # self.last_received_topology_weight_dict = {}
+        # self.last_received_w_dict = {}
 
         ########################################
         # cache of current communication round #
@@ -182,7 +182,8 @@ class Client(object):
             correct = pred.eq(train_Y.view_as(pred)).sum()
 
             KLD_loss = 0
-            for neighbor_id in self.received_model_dict.keys():
+            for neighbor_id in self.topK_neighbor.keys():
+            # for neighbor_id in self.last_received_w_dict.keys():
                 if self.update_w[neighbor_id] == 0:
                     continue
                 neighbor_model = self.received_model_dict[neighbor_id]
@@ -195,10 +196,6 @@ class Client(object):
 
                 KLD_loss += kld_loss.item() * self.update_w[neighbor_id]
 
-            # if len(self.received_model_dict) > 0:
-            #     KLD_loss = KLD_loss / len(self.received_model_dict)
-            #     # print(f"client {self.client_id} local_loss: {local_loss}, KLD_loss: {KLD_loss}")
-            #     local_loss += KLD_loss
             local_loss += KLD_loss
 
             local_loss.backward()
@@ -242,7 +239,7 @@ class Client(object):
         # todo 改这里
         for c_id, loss in topK:
             selected_weight_dict[c_id] = self.received_model_dict[c_id]
-        self.received_model_dict = selected_weight_dict
+        # self.received_model_dict = selected_weight_dict
         self.topK_neighbor = selected_weight_dict
 
         # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
@@ -316,8 +313,11 @@ class Client(object):
         self.p[self.client_id] += self.broadcast_w
         # 聚合上一轮接收到的权重
         # print(f"client {self.client_id} 上一轮接收到权重{self.last_received_w_dict.keys()}")
-        for neighbor_id in self.last_received_w_dict:
-            self.p[neighbor_id] += self.last_received_w_dict[neighbor_id]
+        # for neighbor_id in self.last_received_w_dict:
+        #     self.p[neighbor_id] += self.last_received_w_dict[neighbor_id]
+
+        for neighbor_id in self.received_w_dict:
+            self.p[neighbor_id] += self.received_w_dict[neighbor_id]
 
         # 固定自身权重为最高
         if self_max:

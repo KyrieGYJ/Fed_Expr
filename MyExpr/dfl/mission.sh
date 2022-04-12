@@ -69,6 +69,7 @@ nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:2" "fedavg" "loss" "affinity
 nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c100_new_path2" 1 > log/dfl_weight/c100_new_path2.log 2>&1 &
 nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_new_path2" 1 > log/dfl_weight/c10_new_path2.log 2>&1 &
 nohup bash run.sh 0.01 "BaseConvNet" 2 64 100 "cuda:3" "local" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c100_local2_path2" 1 > log/dfl_weight/c100_local2_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 2 64 10 "cuda:3" "local" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_local2_path2" 1 > log/dfl_weight/c10_local2_path2.log 2>&1 &
 
 
-bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_new_path2"
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "mutual" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_new_mutual_path2" 1 > log/dfl_weight/c10_new_mutual_path2.log 2>&1 &
