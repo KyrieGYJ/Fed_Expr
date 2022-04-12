@@ -24,7 +24,6 @@ from MyExpr.dfl.component.trainer import Trainer
 from MyExpr.dfl.component.recorder import Recorder
 from MyExpr.data import Data
 
-from MyExpr.utils import compute_emd
 from MyExpr.utils import generate_heatmap
 from MyExpr.utils import calc_emd_heatmap
 
@@ -36,52 +35,35 @@ from MyExpr.utils import calc_emd_heatmap
 parser = add_args()
 args = parser.parse_args()
 
-args.num_clients_per_dist = int(args.client_num_in_total / args.num_distributions)
+if "non-iid" in args.data_distribution:
+    # 优先按比例划分
+    args.num_clients_per_dist = int(args.client_num_in_total / args.num_distributions)
 
+# 初始化组件
 trainer = Trainer(args)
-print("初始化trainer完成")
 broadcaster = Broadcaster(args)
-print("初始化broadcaster完成")
 topK_selector = TopKSelector(args)
-print("初始化topK_selector完成")
 client_num_in_total = args.client_num_in_total
-print(f"总共{client_num_in_total}个client进行试验")
-print("初始化component...完成")
-# 初始化拓扑结构
-print("**********generating topology**********")
 topology_manager = TopologyManager(client_num_in_total, True,
                                    undirected_neighbor_num=args.topology_neighbors_num_undirected)
 topology_manager.generate_topology()
-print("**********finishing topology generation**********")
-
-# 5、加载数据集，划分
+# 初始化数据
 data = Data(args)
 data.generate_loader()
 
 client_dic = {}
 recorder = Recorder(client_dic, topology_manager, trainer, broadcaster, topK_selector, data, args)
 
-# 选择网络
+# 初始化client
 model_builder = get_model_builder(args)
-
 if args.enable_dp:
     print("开启差分隐私")
-# 7、初始化client, 选择搭载模型等
-print("初始化clients...", end="")
-train_loader, validation_loader, test_loader = data.train_loader, data.validation_loader, data.test_loader
-for c_id in range(client_num_in_total):
-    # "ResNet18_GN"
-    model = model_builder(num_classes=10)
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr,
-                                 weight_decay=args.wd, amsgrad=True)
-    c = Client(model, c_id, args, train_loader[c_id], validation_loader[c_id], test_loader[c_id])
-    # 方便更换策略
-    c.register(topK_selector=topK_selector, recorder=recorder, broadcaster=broadcaster)
+for c_id in tqdm(range(client_num_in_total), desc='setting up client'):
+    c = Client(model_builder(num_classes=10), c_id, args, data, topK_selector, recorder, broadcaster)
     client_dic[c_id] = c
+# 等client_dic完整后，在这里初始化affinity矩阵
 for c_id in range(client_num_in_total):
     client_dic[c_id].initialize()
-reallocate_client_id = True
-print("完毕")
 
 broadcaster.initialize()
 
@@ -93,10 +75,14 @@ if not os.path.exists(f'./heatmap/{name}'):
     os.makedirs(f'./heatmap/{name}')
 generate_heatmap(emd_list, f"./heatmap/{name}/emd_heatmap2")
 
-args.turn_on_wandb = False
+args.turn_on_wandb = True
 
+# dfl6_20client_noniid
+# dfl6_20client_iid
+# dfl6
+# dfl6_iid
 if args.turn_on_wandb:
-    wandb.init(project="dfl5",
+    wandb.init(project="weight_test",
                entity="kyriegyj",
                name=name,
                config=args)
@@ -137,21 +123,21 @@ for rounds in range(args.comm_round):
     # 在本地数据集上测试
     trainer.local_test()
     # 在全局数据集上测试
-    trainer.overall_test()
-    # 在每个类包含的标签的测试数据上测试
-    trainer.non_iid_test()
+    # trainer.overall_test()
+    # 所属的distribution测试数据上测试
+    # if "non-iid" in args.data_distribution:
+    #     trainer.non_iid_test()
     # 打印affinity热力图（如果采用聚类广播算法）
-    broadcaster.draw_w_heatmap(f"./heatmap/{name}/weight_{rounds}")
+    broadcaster.get_w_heatmap(f"./heatmap/{name}/weight_{rounds}")
     # 打印p矩阵热力图
-    if args.broadcaster_strategy == "affinity_topK":
-        broadcaster.get_clients_p_heatmap(f"./heatmap/{name}/p_{rounds}")
+    # if args.broadcaster_strategy == "affinity_topK":
+    #     broadcaster.get_clients_p_heatmap(f"./heatmap/{name}/p_{rounds}")
     # 打印通信频率热力图
     broadcaster.get_freq_heatmap(f"./heatmap/{name}/freq_{rounds}")
-
     print("-----第{}轮训练结束-----".format(rounds))
 
 
-# 9、保存模型
+# 保存模型
 if args.turn_on_wandb:
     client_model_dic = {}
     for id in client_dic:

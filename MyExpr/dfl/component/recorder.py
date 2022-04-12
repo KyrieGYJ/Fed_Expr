@@ -18,13 +18,16 @@ class Recorder(object):
         broadcaster.register_recorder(self)
         topK_selector.register_recoder(self)
 
+        trainer.non_iid_test_set = data.non_iid_test_set
         trainer.broadcaster = broadcaster
         trainer.test_non_iid = data.test_non_iid
         trainer.client_class_dic = data.client_class_dic
         trainer.class_client_dic = data.class_client_dic
         trainer.dist_client_dict = data.dist_client_dict
+        trainer.client_dist_dict = data.client_dist_dict
         trainer.test_non_iid = data.test_non_iid
         trainer.test_loader = data.test_all
+        trainer.test_data = data.test_data
 
         # 每个client对应的训练数据下标
         self.train_idx_dict = None

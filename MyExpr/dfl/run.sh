@@ -15,6 +15,7 @@ COMM_ROUND=${11}
 NEIGHBOR_UNDIRECTED=${12}
 LOCAL_TRAIN_STOP_POINT=${13}
 NAME=${14}
+BK=${15}
 
 
 python3 main.py \
@@ -23,6 +24,7 @@ python3 main.py \
 --epoch $EPOCH \
 --batch_size $BS \
 --client_num_in_total $N \
+--broadcast_K $BK \
 --device $DEVICE \
 --trainer_strategy $TRAINER_STRATEGY \
 --topK_strategy $TOPK_STRATEGY \

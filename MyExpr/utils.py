@@ -7,6 +7,7 @@ import torch
 import copy
 from torch.utils.data import DataLoader
 
+
 # report the average Earth Mover’s Distance (EMD) between local client data and the total dataset
 # across all clients to quantify non-IIDness.
 def compute_emd(targets_1, targets_2):
@@ -35,7 +36,7 @@ def compute_emd(targets_1, targets_2):
 
 
 # 计算模型之间的权重(参考ICLR FedFomo)
-def cal_w(client, args):
+def cal_raw_w(client, args, loss_only = True, model_distance_adjust=False):
     """
     计算本地模型与其他模型的权重
     ：local_para  本地模型参数
@@ -44,18 +45,17 @@ def cal_w(client, args):
     """
     # 因为在local_update后broadcast，采用本轮local_update后的模型和上一轮接收到的模型进行计算
     # 相当于基于接受者上一轮的模型预测：接受者的本地模型在本地经历过mutual_update和新一轮local_update后，发送者的新本地模型和它的仍然是相近的。
-    w = {}
+    w_dict = {}
     criterion = client.criterion_CE
     val_dataloader = client.validation_loader
     local_model = client.model
     received_dic = client.last_received_model_dict
-    # train_dl = DataLoader(train_ds, batch_size=64, shuffle=True)
-    # Net.load_state_dict(local_model, strict=True)
 
+    epsilon = 1e-6
     total_local_loss = 0.0
-    loss_dic = {}
+    loss_dict = {}
     for c_id, model in received_dic.items():
-        loss_dic[c_id] = 0.0
+        loss_dict[c_id] = 0.0
 
     with torch.no_grad():
         local_model.eval()
@@ -77,21 +77,24 @@ def cal_w(client, args):
                 if "cuda" in args.device:
                     received_loss = received_loss.cpu()
 
-                loss_dic[c_id] += received_loss.item()
+                loss_dict[c_id] += received_loss.item()
 
-    loss_only = True
-    epsilon = 1e-6
     for c_id, model in received_dic.items():
         # 计算分母
         # dif = CalDif(local_model, model, args)
-        if loss_only:
-            w[c_id] = total_local_loss - loss_dic[c_id]
-        else:
-            dif = compute_parameter_difference(model, local_model, norm=args.model_delta_norm)
-            print(f"model_dif: {dif}, loss_delta:{total_local_loss - loss_dic[c_id]}")
-            w[c_id] = ((total_local_loss - loss_dic[c_id]) / (dif + epsilon))
+        w_dict[c_id] = total_local_loss - loss_dict[c_id]
 
-    return w
+    return w_dict
+
+
+def cal_model_dif(client, args, normalize=True, norm_type="l2_root"):
+    local_model = client.model
+    received_dic = client.last_received_model_dict
+    dif_dict = {}
+    for c_id, model in received_dic.items():
+        dif = compute_parameter_difference(local_model, model, norm=norm_type)
+        dif_dict[c_id] = dif
+    return dif_dict
 
 
 # 搬运FedFomo，功能与CalDif相同
@@ -149,7 +152,7 @@ def CalDif(model1, model2, args):
     return dif
 
 
-def get_adjacency_matrix1(client, symmetric=True, shift_positive=False,
+def get_adjacency_matrix_decrapted(client, symmetric=True, shift_positive=False,
                          normalize=True, rbf_kernel=False, rbf_delta=1.):
     """
     If learning federations through updated client weight preferences,
@@ -201,43 +204,47 @@ def get_adjacency_matrix(client, softmax_client_weights=False, symmetric=True, s
         if np.min(matrix) < 0:
             matrix = matrix + (0 - np.min(matrix))
         # print(f"shift positive matrix{matrix}"
+
+    # 调整自身权重为最大
+    for i in range(len(matrix)):
+        matrix[i][i] = np.min(matrix)
+    for i in range(len(matrix)):
+        matrix[i][i] = np.max(matrix)
+
     if normalize:
-        # print("normalize")
-        matrix = matrix - np.min(matrix) / (np.max(matrix) - np.min(matrix))
-        # print(f"normalize matrix{matrix}")
+        # matrix = matrix - np.min(matrix) / (np.max(matrix) - np.min(matrix))
+        matrix = (matrix - np.min(matrix)) / (np.max(matrix) - np.min(matrix))
+
     return matrix
 
 
-# 计算emd热力图
 def calc_emd_heatmap(train_data, train_idx_dict, args):
+    """
+    Args:
+        train_data: 总训练数据集
+        train_idx_dict: client划分训练数据的字典
+        args:
+    Returns:
+        反应数据集之间相似度的热力图矩阵
+    """
     client_num_in_total = args.client_num_in_total
     emd_list = np.zeros([client_num_in_total, client_num_in_total], dtype=np.float64)
     epsilon = 1e-10
     for c_id_from in range(client_num_in_total):
         for c_id_to in range(client_num_in_total):
-            # if c_id_from == c_id_to:
-            #     emd_list[c_id_from][c_id_to] = 0
-            #     continue
             train_data_from = [train_data.targets[x] for x in train_idx_dict[c_id_from]]
             train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
             emd = compute_emd(train_data_from, train_data_to)
-            # emd_list[c_id_from][c_id_to] = 1 / (emd + epsilon)
             emd_list[c_id_from][c_id_to] = emd
-    # print(emd_list.shape)
-    # emd_list = emd_list - emd_list.min() / (emd_list.max() - emd_list.min())
     # todo 这样写整个热力图色调偏冷，而权重热力图偏热，可能在下面那个循环改成倒数会好些
     emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)
-    # for c_id in range(client_num_in_total):
-    #     emd_list[c_id][c_id] = 0
     return emd_list
 
 
 # 根据二维矩阵生成热力图
 def generate_heatmap(matrix, path):
     # 显示数值 square=True, annot=True
-    # print(len(matrix), len(matrix[0]))
-    # print(matrix)
-    plt.matshow(matrix, cmap=plt.cm.rainbow, vmin=0, vmax=1)
+    plt.matshow(matrix, cmap=plt.cm.rainbow, vmin=np.min(matrix), vmax=np.max(matrix))
     plt.colorbar()
     # plt.show()
     # sns.heatmap(matrix, vmin=0, vmax=1, center=0.5)
@@ -246,19 +253,7 @@ def generate_heatmap(matrix, path):
     plt.savefig(path, dpi=600)
     plt.close()
 
-# def getName(args):
-#     name = ""
-#     if args.model == "BaseConvNet":
-#         name = "BCN"
-#     else:
-#         name = args.model
-#     name += "-"+args.client_num_in_total+"c"
-#     name += "-"+str(args.topology_neighbors_num_undirected)+"n"
-#     name += "-"+str(args.epochs)+"e"
-#     name += "-"+args.broadcaster_strategy
-#     if args.local_train_stop_point <= args.comm_round:
-#         name += "-"+str(args.local_train_stop_point)+"stop"
-#     return name
+
 def print_debug(stdout, prefix=''):
     DEBUG = True
     if DEBUG:

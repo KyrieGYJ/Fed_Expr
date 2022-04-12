@@ -29,20 +29,6 @@ class TopKSelector(object):
         for index in host.received_model_dict:
             loss_dic[index] = 0
 
-        # with torch.no_grad():
-        #     for idx, (val_X, val_Y) in enumerate(host.validation_loader):
-        #         val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
-        #         for index in host.received_model_dict:
-        #             neighbor_model = host.received_model_dict[index]
-        #             outputs = neighbor_model(val_X)
-        #             loss = host.criterion_CE(outputs, val_Y)
-        #
-        #             if "cuda" in self.recorder.args.device:
-        #                 loss = loss.cpu()
-        #
-        #             loss_dic[index] += loss.item()
-        #             iteration += 1
-
         for idx, (val_X, val_Y) in enumerate(host.validation_loader):
             val_X, val_Y = val_X.to(self.args.device), val_Y.to(self.args.device)
             for index in host.received_model_dict:
@@ -122,4 +108,3 @@ class TopKSelector(object):
                 heap.append([index, f1_micro, outputs])
         top_k = heapq.nlargest(math.floor(len(heap) * 0.8), heap, lambda x: -x[1])
         return top_k
-

@@ -64,6 +64,8 @@ def add_args():
     parser.add_argument('--broadcaster_strategy', type=str, default="flood",
                         help='[flood, affinity, random, cluster, similarity]')
 
+    parser.add_argument('--broadcast_K', type=float, default=0.5, help='the topK ratio of broadcaster, -1 means that equals to num_clients_per_dist')
+
     parser.add_argument('--trainer_strategy', type=str, default="local_and_mutual",
                         help='[local_and_mutual, mutual, local_train, model_interpolation, pushsum]')
 
