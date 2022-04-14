@@ -73,3 +73,29 @@ nohup bash run.sh 0.01 "BaseConvNet" 2 64 10 "cuda:3" "local" "loss" "affinity_t
 
 
 nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "mutual" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_new_mutual_path2" 1 > log/dfl_weight/c10_new_mutual_path2.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "local_and_mutual" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_new_m2_path2" 1 > log/dfl_weight/c10_new_m2_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 3 64 10 "cuda:3" "local" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_local3_path2" 1 > log/dfl_weight/c10_local3_path2.log 2>&1 &
+
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "local" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_local1_path2" 1 > log/dfl_weight/c10_local1_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "local" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c100_local1_path2" 1 > log/dfl_weight/c10_local1_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c10_wmi_path2" 1 > log/dfl_weight/c10_wmi_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "weighted_model_interpolation" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "c100_wmi_path2" 1 > log/dfl_weight/c100_wmi_path2.log 2>&1 &
+
+
+bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "testtest" 1
+bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation2" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "testtest" 1
+bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" "non-iid_pathological2" 50 100 999 "testtest" 1
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c10_wmi1_path2" 1 > log/dfl_mwi/c10_wmi1_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "weighted_model_interpolation" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c100_wmi1_path2" 1 > log/dfl_mwi/c100_wmi1_path2.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation2" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c10_wmi2_path2" 1 > log/dfl_mwi/c10_wmi2_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "weighted_model_interpolation2" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c100_wmi2_path2" 1 > log/dfl_mwi/c100_wmi2_path2.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c10_wmi3_path2" 1 > log/dfl_mwi/c10_wmi3_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c100_wmi3_path2" 1 > log/dfl_mwi/c100_wmi3_path2.log 2>&1 &
+
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation4" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c10_wmi4_path2" 1 > log/dfl_mwi/c10_wmi4_path2.log 2>&1 &
+nohup bash run.sh 0.01 "BaseConvNet" 1 64 100 "cuda:3" "weighted_model_interpolation4" "loss" "affinity_topK" "non-iid_pathological2" 100 100 999 "c100_wmi4_path2" 1 > log/dfl_mwi/c100_wmi4_path2.log 2>&1 &

@@ -1,6 +1,6 @@
 
 import time
-from MyExpr.utils import cal_raw_w
+from MyExpr.utils import calc_delta_loss
 import heapq
 import numpy as np
 import torch
@@ -95,13 +95,10 @@ class Broadcaster(object):
     def flood(self, sender_id, model):
         client_dic = self.recorder.client_dic
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
-        # num = 0
         for receiver_id in client_dic.keys():
             if topology[receiver_id] != 0 and receiver_id != sender_id:
                 # print("{:d} 发送到 {:d}".format(sender_id, receiver_id))
-                self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].broadcast_w)
-                # num += 1
-        # print("client {} has {} neighbors".format(sender_id, num))
+                self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
 
     def random(self, sender_id, model):
         client_dic = self.recorder.client_dic
@@ -119,7 +116,7 @@ class Broadcaster(object):
         np.random.seed(int(time.time()))  # make sure for each comparison, we are selecting the same clients each round
         client_indexes = np.random.choice(neighbor_list, K, replace=False)
         for receiver_id in client_indexes:
-            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].broadcast_w)
+            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
 
     #######################################
     #         variants of affinity        #
@@ -139,9 +136,11 @@ class Broadcaster(object):
         sender = client_dic[sender_id]
 
         if affinity_matrix is None:
-            sender.update_broadcast_weight()
-            sender.update_p()
+            # sender.update_broadcast_weight()
+            # sender.update_p()
+            sender.cache_keeper.update()
             # 根据p生成affinity矩阵
+            # todo 改
             affinity_matrix = get_adjacency_matrix(sender)
 
         sender.affinity_matrix = affinity_matrix
@@ -175,7 +174,7 @@ class Broadcaster(object):
             # print(f"发送给client {receiver.client_id}")
             if receiver.client_id == sender_id:
                 continue
-            self.receive_from_neighbors(sender_id, model, receiver.client_id, topology[receiver.client_id], sender.broadcast_w)
+            self.receive_from_neighbors(sender_id, model, receiver.client_id, topology[receiver.client_id], sender.cache_keeper.broadcast_weight)
 
     # 取topK
     def affinity_topK(self, sender_id, model, affinity_matrix=None):
@@ -189,12 +188,9 @@ class Broadcaster(object):
         sender = client_dic[sender_id]
 
         if affinity_matrix is None:
-            # （自身权重取max）
-            sender.update_broadcast_weight()
-            sender.update_p()
-            # 根据p生成affinity矩阵(正规化)
-            affinity_matrix = get_adjacency_matrix(sender)
-            # print(f"client {sender_id} affinity max={np.max(affinity_matrix)}， affinity min {np.min(affinity_matrix)}")
+            sender.cache_keeper.update_weight()
+            sender.cache_keeper.update_affinity_map()
+            affinity_matrix = sender.cache_keeper.affinity_matrix
 
         sender.affinity_matrix = affinity_matrix
 
@@ -210,20 +206,20 @@ class Broadcaster(object):
                 continue
             candidate.append(neighbor_id)
 
-        # topK = heapq.nlargest(self.args.num_clients_per_dist, candidate, lambda x: sender.affinity_matrix[sender_id][x])
         if self.args.broadcast_K == -1:
             K = self.args.num_clients_per_dist
         else:
             K = int(self.args.broadcast_K * self.args.client_num_in_total)
         # print(f"广播{K}个，num_clients_per_dist:{self.args.num_clients_per_dist}, total:{self.args.client_num_in_total}")
-        topK = heapq.nlargest(K, candidate, lambda x: sender.affinity_matrix[sender_id][x])
+        # topK = heapq.nlargest(K, candidate, lambda x: sender.affinity_matrix[sender_id][x])
+        topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.affinity_matrix[sender_id][x])
 
         # 转发
         # print(f"client {sender_id} are prone to be in the same distributions with {topK}")
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for receiver_id in topK:
             # print(f"发送给client {receiver.client_id}")
-            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.broadcast_w)
+            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.cache_keeper.broadcast_weight)
 
     def affinity_baseline(self, sender_id, model, affinity_matrix=None):
         args = self.args
@@ -238,8 +234,9 @@ class Broadcaster(object):
         sender = client_dic[sender_id]
 
         if affinity_matrix is None:
-            sender.update_broadcast_weight()
-            sender.update_p()
+            # sender.update_broadcast_weight()
+            # sender.update_p()
+            sender.cache_keeper.update()
             # 根据p生成affinity矩阵
             affinity_matrix = get_adjacency_matrix(sender)
 
@@ -257,7 +254,7 @@ class Broadcaster(object):
         for receiver_id in sender_dist:
             if receiver_id == sender_id:
                 continue
-            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.broadcast_w)
+            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.cache_keeper.broadcast_weight)
 
     def affinity(self, sender_id, model):
         # 不接收邻居的广播权重，只按照自身的计算
@@ -268,7 +265,7 @@ class Broadcaster(object):
             return
         # 选15个广播
         client_dic = self.recorder.client_dic
-        new_w = cal_raw_w(client_dic[sender_id], self.recorder.args)
+        new_w = calc_delta_loss(client_dic[sender_id], self.recorder.args)
         sender_p_metric = self.p[sender_id]
         sender_w_metric = self.w[sender_id]
         candidate = []

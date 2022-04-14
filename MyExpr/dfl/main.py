@@ -62,8 +62,8 @@ for c_id in tqdm(range(client_num_in_total), desc='setting up client'):
     c = Client(model_builder(num_classes=10), c_id, args, data, topK_selector, recorder, broadcaster)
     client_dic[c_id] = c
 # 等client_dic完整后，在这里初始化affinity矩阵
-for c_id in range(client_num_in_total):
-    client_dic[c_id].initialize()
+# for c_id in range(client_num_in_total):
+#     client_dic[c_id].initialize()
 
 broadcaster.initialize()
 

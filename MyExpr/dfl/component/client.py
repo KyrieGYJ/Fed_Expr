@@ -6,7 +6,8 @@ from opacus import PrivacyEngine
 import logging
 import math
 
-from MyExpr.utils import cal_raw_w, cal_model_dif
+# from MyExpr.utils import cal_delta_loss, cal_model_dif
+from .cache_keeper import keeper
 
 
 class Client(object):
@@ -61,13 +62,7 @@ class Client(object):
         self.topK_selector = topK_selector
         self.recorder = recorder
         self.broadcaster = broadcaster
-
-        #####################################
-        # cache of last communication round #
-        #####################################
-        # self.last_received_model_dict = {}
-        # self.last_received_topology_weight_dict = {}
-        # self.last_received_w_dict = {}
+        self.cache_keeper = keeper(self)
 
         ########################################
         # cache of current communication round #
@@ -77,32 +72,14 @@ class Client(object):
         # broadcast weight from neighbor
         self.received_w_dict = {}
 
-        self.topK_neighbor = {}
+        self.topK_neighbor = None
 
         # self broadcast weight
         self.p = []
-        self.broadcast_w = []
-        self.update_w = []
+        # self.broadcast_w = []
+        # self.update_w = []
         self.affinity_matrix = []
 
-    def initialize(self):
-        client_dic = self.recorder.client_dic
-        other_weight = 0.
-        client_initial_self_weight = 0.1
-        self.p = np.ones([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64) * other_weight
-        self.broadcast_w = np.ones([self.args.client_num_in_total], dtype=np.float64) * other_weight
-        for c_id in client_dic:
-            topology = self.recorder.topology_manager.get_symmetric_neighbor_list(c_id)
-            for neighbor_id in client_dic:
-                # 不相邻的client不存在权重
-                # if topology[neighbor_id] == 0:
-                #     self.p[c_id][neighbor_id] = 0.
-                #     self.w[neighbor_id] = 0.
-                # elif neighbor_id == c_id:
-                #     self.p[c_id][neighbor_id] = 1. * client_initial_self_weight
-                #     self.w[neighbor_id] = 1. * client_initial_self_weight
-                self.p[c_id][neighbor_id] = 0.
-                self.broadcast_w[neighbor_id] = 0.
 
     ################
     # an iteration #
@@ -141,8 +118,9 @@ class Client(object):
     ############
     def local_train(self):
         self.model.train()
+        epochs = self.args.epochs
         total_loss, total_correct = 0.0, 0.0
-        for epoch in range(self.args.epochs):
+        for epoch in range(epochs):
             iteration = 0
             for idx, (train_X, train_Y) in enumerate(self.train_loader):
                 train_loss, correct = self.train(train_X, train_Y)
@@ -150,6 +128,8 @@ class Client(object):
                 total_correct += correct
                 iteration += 1
             # print("client {}: local train takes {} iteration".format(self.client_id, iteration))
+        total_loss /= epochs
+        total_correct /= epochs
         if self.args.enable_dp:
             epsilon, best_alpha = self.privacy_engine.accountant.get_privacy_spent(
                 delta=self.args.delta
@@ -164,57 +144,55 @@ class Client(object):
 
     def deep_mutual_update(self):
         self.model.train()
+        epochs = 1
         total_loss, total_correct = 0.0, 0.0
         total_local_loss, total_KLD_loss = 0.0, 0.0
-        # print(f"client[{self.client_id}]共{len(self.received_model_dict)}个client互学习参与")
-        for idx, (train_X, train_Y) in enumerate(self.train_loader):
-            self.optimizer.zero_grad()
-            train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
-            local_outputs = self.model(train_X)
-            local_loss = self.criterion_CE(local_outputs, train_Y)
 
-            if "cuda" in self.args.device:
-                local_loss = local_loss.cpu()
+        mutual_update_candidate = self.received_model_dict if self.topK_neighbor is None else self.topK_neighbor
 
-            total_local_loss += local_loss.item()
+        print(f"self: client {self.client_id} 中有client:[{self.received_model_dict.keys()}]参与互学习")
+        for epoch in range(epochs):
+            for idx, (train_X, train_Y) in enumerate(self.train_loader):
+                self.optimizer.zero_grad()
+                train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
+                local_outputs = self.model(train_X)
+                local_loss = self.criterion_CE(local_outputs, train_Y)
 
-            pred = local_outputs.argmax(dim=1)
-            correct = pred.eq(train_Y.view_as(pred)).sum()
-
-            KLD_loss = 0
-            for neighbor_id in self.topK_neighbor.keys():
-            # for neighbor_id in self.last_received_w_dict.keys():
-                if self.update_w[neighbor_id] == 0:
-                    continue
-                neighbor_model = self.received_model_dict[neighbor_id]
-                neighbor_model.eval()
-                neighbor_outputs = neighbor_model(train_X)
-                kld_loss = self.criterion_KLD(self.LogSoftmax(local_outputs),
-                                               self.Softmax(neighbor_outputs.detach()))
                 if "cuda" in self.args.device:
-                    kld_loss = kld_loss.cpu()
+                    local_loss = local_loss.cpu()
 
-                KLD_loss += kld_loss.item() * self.update_w[neighbor_id]
+                total_local_loss += local_loss.item()
 
-            local_loss += KLD_loss
+                pred = local_outputs.argmax(dim=1)
+                correct = pred.eq(train_Y.view_as(pred)).sum()
 
-            local_loss.backward()
-            self.optimizer.step()
+                KLD_loss = 0
+                for neighbor_id in mutual_update_candidate.keys():
+                # for neighbor_id in self.last_received_w_dict.keys():
+                    if self.cache_keeper.mutual_update_weight[neighbor_id] == 0.:
+                        # print(f"client {self.client_id} skip neighbor {neighbor_id}")
+                        continue
+                    neighbor_model = mutual_update_candidate[neighbor_id]
+                    neighbor_model.eval()
+                    neighbor_outputs = neighbor_model(train_X)
+                    kld_loss = self.criterion_KLD(self.LogSoftmax(local_outputs),
+                                                   self.Softmax(neighbor_outputs.detach()))
+                    if "cuda" in self.args.device:
+                        kld_loss = kld_loss.cpu()
 
-            if "cuda" in self.device:
-                local_loss = local_loss.cpu()
-            total_loss += local_loss.item()
-            total_correct += correct
-            total_KLD_loss += KLD_loss
+                    KLD_loss += kld_loss.item() * self.cache_keeper.mutual_update_weight[neighbor_id]
 
-        # if iteration > 0:
-        #     total_KLD_loss /= iteration
-        #     total_local_loss /= iteration
+                local_loss += KLD_loss
 
-        # print(f"client {self.client_id} avg_KLD_loss: {total_KLD_loss}  avg_local_loss: {total_local_loss}")
+                local_loss.backward()
+                self.optimizer.step()
 
-        # print("client {} 的平均互学习KL散度为:{}, local_loss为:{}".format(self.client_id, total_KLD_loss, total_local_loss))
-        return total_loss, total_correct, total_local_loss, total_KLD_loss
+                if "cuda" in self.device:
+                    local_loss = local_loss.cpu()
+                total_loss += local_loss.item()
+                total_correct += correct
+                total_KLD_loss += KLD_loss
+        return total_loss / epochs, total_correct / epochs, total_local_loss / epochs, total_KLD_loss / epochs
 
     # 采用dsgd模型插值进行协同更新
     def model_interpolation_update(self):
@@ -230,11 +208,90 @@ class Client(object):
                 temp = x_neighbor.data.mul(topo_weight)
                 x_paras.data.add_(temp)
 
+    # todo 改bug
+    def weighted_model_interpolation_update(self):
+        local_factor = 0.5
+        for x_paras in self.model.parameters():
+            x_paras.data.mul_(local_factor)
+
+        flag = False
+        temp_paras = None
+        total_weight = 0
+        for neighbor_id in self.received_model_dict.keys():
+            neighbor_model = self.received_model_dict[neighbor_id]
+            neighbor_weight = self.cache_keeper.mutual_update_weight[neighbor_id]
+            if neighbor_weight > 0:
+                flag = True
+            # for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
+            #     temp = x_neighbor.data.mul(neighbor_weight).mul(1 - local_factor)
+            #     if temp_paras is None:
+            #         temp_paras = temp
+            #     else:
+            #         temp_paras.data.add_(temp)
+            for i, neighbor_para in enumerate(list)
+                # temp = x_neighbor.data.mul(neighbor_weight).mul(1 - local_factor)
+                # x_paras.data.add_(temp)
+            total_weight += neighbor_weight
+        if temp_paras is not None:
+            temp_paras.data.div_(total_weight)
+            x_paras.data.add_(temp_paras)
+
+        if not flag:
+            for x_paras in self.model.parameters():
+                x_paras.data.mul_(1 / local_factor)
+
+    # todo 临时
+    def weighted_model_interpolation_update2(self):
+        local_weight = self.cache_keeper.mutual_update_weight2[self.client_id]
+        total_weight = local_weight
+        for x_paras in self.model.parameters():
+            x_paras.data.mul_(local_weight)
+
+        for neighbor_id in self.received_model_dict.keys():
+            neighbor_model = self.received_model_dict[neighbor_id]
+            neighbor_weight = self.cache_keeper.mutual_update_weight2[neighbor_id]
+            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
+                temp = x_neighbor.data.mul(neighbor_weight)
+                x_paras.data.add_(temp)
+            total_weight += neighbor_weight
+        x_paras.data.div_(total_weight)
+
+    def weighted_model_interpolation_update3(self):
+        local_weight = self.cache_keeper.mutual_update_weight3[self.client_id]
+        total_weight = local_weight
+        for x_paras in self.model.parameters():
+            x_paras.data.mul_(local_weight)
+
+        for neighbor_id in self.received_model_dict.keys():
+            neighbor_model = self.received_model_dict[neighbor_id]
+            neighbor_weight = self.cache_keeper.mutual_update_weight3[neighbor_id]
+            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
+                temp = x_neighbor.data.mul(neighbor_weight)
+                x_paras.data.add_(temp)
+            total_weight += neighbor_weight
+        x_paras.data.div_(total_weight)
+
+    def weighted_model_interpolation_update4(self):
+        local_weight = self.cache_keeper.mutual_update_weight4[self.client_id]
+        total_weight = local_weight
+        for x_paras in self.model.parameters():
+            x_paras.data.mul_(local_weight)
+
+        for neighbor_id in self.received_model_dict.keys():
+            neighbor_model = self.received_model_dict[neighbor_id]
+            neighbor_weight = self.cache_keeper.mutual_update_weight4[neighbor_id]
+            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
+                temp = x_neighbor.data.mul(neighbor_weight)
+                x_paras.data.add_(temp)
+            total_weight += neighbor_weight
+        x_paras.data.div_(total_weight)
+
+
     def select_topK(self):
         topK = self.topK_selector.select(self)
         if topK is None:
             return
-        self.topK = topK
+        # self.topK = topK
         selected_weight_dict = {}
         # todo 改这里
         for c_id, loss in topK:
@@ -245,87 +302,82 @@ class Client(object):
         # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
 
     # todo 改
-    def update_broadcast_weight(self, balanced=False, model_dif_adjust=True):
-        new_w_dict = cal_raw_w(self, self.recorder.args)
-
-        new_broadcast_w_list = []
-        new_update_w_list = []
-
-        epsilon = 1e-9
-        for i in range(self.args.client_num_in_total):
-            # relu
-            if i in new_w_dict and new_w_dict[i] > 0:
-                new_update_w_list.append(copy.deepcopy(new_w_dict[i]))
-            else:
-                new_update_w_list.append(0)
-
-        norm_factor = max(np.sum(new_update_w_list), epsilon)
-        new_update_w_list = np.array(new_update_w_list) / norm_factor
-
-        for i in range(self.args.client_num_in_total):
-            if i in new_w_dict:
-                new_broadcast_w_list.append(copy.deepcopy(new_w_dict[i]))
-            else:
-                # print(f"{self.client_id} 缺少 {i}")
-                new_broadcast_w_list.append(0)
-
-        new_broadcast_w_list = np.array(new_broadcast_w_list)
-
-        if model_dif_adjust:
-            dif_list = [0 for _ in range(self.args.client_num_in_total)]
-            dif_dict = cal_model_dif(self, self.args, norm_type="l2_root")
-            for c_id, dif in dif_dict.items():
-                dif_list[c_id] = dif_dict[c_id]
-            dif_list = np.array(dif_list)
-            dif_list[self.client_id] = np.min(dif_list)
-            dif_list = (dif_list - np.min(dif_list)) / (np.max(dif_list) - np.min(dif_list)) # norm
-            dif_list = (1 - dif_list)
-
-            new_broadcast_w_list *= dif_list
-            new_update_w_list *= dif_list
-
-        if balanced:
-            new_broadcast_w_list /= len(self.validation_set)
-
-        # 试下
-        # new_broadcast_w_list = (new_broadcast_w_list - np.min(new_broadcast_w_list)) / (np.max(new_broadcast_w_list) - np.min(new_broadcast_w_list))
-
-        # # norm 1
-        # normalization_factor = np.abs(np.sum(new_broadcast_w_list))
-        #
-        # if normalization_factor < 1e-9:
-        #     print('Normalization factor is really small')
-        #     normalization_factor += 1e-9
-        # new_broadcast_w_list = np.array(new_broadcast_w_list) / normalization_factor
-
-        norm_factor = np.sum(new_update_w_list)
-        norm_factor = max(norm_factor, epsilon)
-        new_update_w_list = np.array(new_update_w_list) / norm_factor
-
-        print(f"client {self.client_id} new_update_w_list : {new_update_w_list}")
-        print(f"client {self.client_id} new_broadcast_w_list : {new_broadcast_w_list}")
-
-        # 更新权重
-        self.update_w = new_update_w_list
-        self.broadcast_w = new_broadcast_w_list
-
-    def update_p(self, self_max=True):
-        self.p[self.client_id] += self.broadcast_w
-        # 聚合上一轮接收到的权重
-        # print(f"client {self.client_id} 上一轮接收到权重{self.last_received_w_dict.keys()}")
-        # for neighbor_id in self.last_received_w_dict:
-        #     self.p[neighbor_id] += self.last_received_w_dict[neighbor_id]
-
-        for neighbor_id in self.received_w_dict:
-            self.p[neighbor_id] += self.received_w_dict[neighbor_id]
-
-        # 固定自身权重为最高
-        if self_max:
-            for c_id in range(len(self.p)):
-                self.p[c_id][c_id] = np.min(self.p)
-            for c_id in range(len(self.p)):
-                self.p[c_id][c_id] = np.max(self.p)
-            # print(f"client {self.client_id} p max {np.max(self.p)}")
+    # def update_broadcast_weight(self, balanced=False, model_dif_adjust=True):
+    #     new_w_dict = cal_delta_loss(self, self.recorder.args)
+    #
+    #     new_broadcast_w_list = []
+    #     new_update_w_list = []
+    #
+    #     epsilon = 1e-9
+    #     for i in range(self.args.client_num_in_total):
+    #         # relu
+    #         if i in new_w_dict and new_w_dict[i] > 0:
+    #             new_update_w_list.append(copy.deepcopy(new_w_dict[i]))
+    #         else:
+    #             new_update_w_list.append(0)
+    #
+    #     norm_factor = max(np.sum(new_update_w_list), epsilon)
+    #     new_update_w_list = np.array(new_update_w_list) / norm_factor
+    #
+    #     for i in range(self.args.client_num_in_total):
+    #         if i in new_w_dict:
+    #             new_broadcast_w_list.append(copy.deepcopy(new_w_dict[i]))
+    #         else:
+    #             # print(f"{self.client_id} 缺少 {i}")
+    #             new_broadcast_w_list.append(0)
+    #
+    #     new_broadcast_w_list = np.array(new_broadcast_w_list)
+    #
+    #     if model_dif_adjust:
+    #         dif_list = [0 for _ in range(self.args.client_num_in_total)]
+    #         dif_dict = cal_model_dif(self, self.args, norm_type="l2_root")
+    #         for c_id, dif in dif_dict.items():
+    #             dif_list[c_id] = dif_dict[c_id]
+    #         dif_list = np.array(dif_list)
+    #         dif_list[self.client_id] = np.min(dif_list)
+    #         dif_list = (dif_list - np.min(dif_list)) / (np.max(dif_list) - np.min(dif_list)) # norm
+    #         dif_list = (1 - dif_list)
+    #
+    #         new_broadcast_w_list *= dif_list
+    #         new_update_w_list *= dif_list
+    #
+    #     if balanced:
+    #         new_broadcast_w_list /= len(self.validation_set)
+    #
+    #     # 试下
+    #     # new_broadcast_w_list = (new_broadcast_w_list - np.min(new_broadcast_w_list)) / (np.max(new_broadcast_w_list) - np.min(new_broadcast_w_list))
+    #
+    #     # # norm 1
+    #     # normalization_factor = np.abs(np.sum(new_broadcast_w_list))
+    #     #
+    #     # if normalization_factor < 1e-9:
+    #     #     print('Normalization factor is really small')
+    #     #     normalization_factor += 1e-9
+    #     # new_broadcast_w_list = np.array(new_broadcast_w_list) / normalization_factor
+    #
+    #     norm_factor = np.sum(new_update_w_list)
+    #     norm_factor = max(norm_factor, epsilon)
+    #     new_update_w_list = np.array(new_update_w_list) / norm_factor
+    #
+    #     print(f"client {self.client_id} new_update_w_list : {new_update_w_list}")
+    #     print(f"client {self.client_id} new_broadcast_w_list : {new_broadcast_w_list}")
+    #
+    #     # 更新权重
+    #     self.update_w = new_update_w_list
+    #     self.broadcast_w = new_broadcast_w_list
+    #
+    # def update_p(self, self_max=True):
+    #     self.p[self.client_id] += self.broadcast_w
+    #     for neighbor_id in self.received_w_dict:
+    #         self.p[neighbor_id] += self.received_w_dict[neighbor_id]
+    #
+    #     # 固定自身权重为最高
+    #     if self_max:
+    #         for c_id in range(len(self.p)):
+    #             self.p[c_id][c_id] = np.min(self.p)
+    #         for c_id in range(len(self.p)):
+    #             self.p[c_id][c_id] = np.max(self.p)
+    #         # print(f"client {self.client_id} p max {np.max(self.p)}")
 
     # 广播模块
     def broadcast(self):

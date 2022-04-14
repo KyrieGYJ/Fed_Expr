@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm
 
 from MyExpr.cfl.server import Server
-from MyExpr.utils import cal_raw_w
+from MyExpr.utils import calc_delta_loss
 from MyExpr.utils import get_adjacency_matrix
 
 # 协同训练器：采用某种协同训练策略, 控制某一个communication_round训练
@@ -75,6 +75,8 @@ class Trainer(object):
             self.train = self.mutual
         elif strategy == "model_interpolation":
             self.train = self.model_interpolation
+        elif "weighted_model_interpolation" in strategy:
+            self.train = self.weighted_model_interpolation
         elif strategy == "oracle_class":
             self.train = self.oracle_class
         elif strategy == "oracle_distribution":
@@ -91,77 +93,35 @@ class Trainer(object):
     def broadcast(self):
         # print("-----开始广播-----")
         for c_id in self.client_dic:
-            client = self.client_dic[c_id]
-            client.broadcast()
+            self.client_dic[c_id].broadcast()
             # print("client {} 广播完毕".format(c_id))
 
         # 如果是affinity算法，第一轮是flood广播。接收到第一轮的neighbor模型后，要计算初始权重，然后再广播出去，聚合接收到的所有权重，生成初始的affinity矩阵。
         if self.args.broadcaster_strategy in ["affinity_cluster", "affinity_baseline", "affinity_topK"] and self.recorder.rounds == 0:
             print("额外初始化affinity矩阵。。。")
 
-            # 缓存flood阶段接收到的模型
-            # for c_id in self.client_dic:
-            #     client = self.client_dic[c_id]
-            #     client.last_received_model_dict = client.received_model_dict
-            #     client.last_received_topology_weight_dict = client.received_topology_weight_dict
-
+            self.cache_received()
 
             # 计算权重
             for sender_id in self.client_dic:
-                client_dic = self.recorder.client_dic
-                sender = client_dic[sender_id]
-
-                # new_w = cal_raw_w(sender, self.recorder.args)
-                # new_w_list = []
-                # for i in range(self.args.client_num_in_total):
-                #     if i in new_w:
-                #         new_w_list.append(new_w[i])
-                #     else:
-                #         new_w_list.append(0)
-                # normalization_factor = np.abs(np.sum(new_w_list))
-                # if normalization_factor < 1e-9:
-                #     print('Normalization factor is really small')
-                #     normalization_factor += 1e-9
-                # new_w_list = np.array(new_w_list) / normalization_factor
-                sender.update_broadcast_weight()
-
-                # # 固定自身权重为最高
-                # new_w_list[sender_id] = np.max(new_w_list)
-
-                sender.p[sender_id] += sender.broadcast_w
-                # sender.broadcast_w = new_w_list
+                self.client_dic[sender_id].cache_keeper.update_weight()
 
             # flood广播权重
             for sender_id in self.client_dic:
-                sender = self.client_dic[sender_id]
-                sender.broadcast()
+                self.client_dic[sender_id].broadcast()
+
+            self.cache_received()
 
             # 所有client聚合上一轮接收到的权重 todo 改这块
             print("根据接收到的邻居权重计算affinity矩阵，根据affinity聚类重新广播")
             for sender_id in self.client_dic:
-                sender = self.client_dic[sender_id]
-                # print(f"client {sender_id} 接收到 {sender.received_w_dict.keys()} 的权重")
-                for neighbor_id in sender.received_w_dict:
-                    # sender.p[neighbor_id] += sender.last_received_w_dict[neighbor_id]
-                    sender.p[neighbor_id] += sender.received_w_dict[neighbor_id]
-
-                # print(sender.p)
-                for c_id in range(len(sender.p)):
-                    sender.p[c_id][c_id] = np.min(sender.p)
-                # print(sender.p)
-                for c_id in range(len(sender.p)):
-                    sender.p[c_id][c_id] = np.max(sender.p)
-                # print(sender.p)
-
-            # 防止flood广播的缓存影响接下来的affinity广播
-            self.clear_cache()
+                self.client_dic[sender_id].cache_keeper.update_affinity_map()
 
             # 计算affinity矩阵，并采用affinity算法广播旧权重
             for sender_id in self.client_dic:
                 sender = self.client_dic[sender_id]
                 # 计算affinity矩阵
-                affinity_matrix = get_adjacency_matrix(sender)
-                sender.affinity_matrix = affinity_matrix
+                affinity_matrix = sender.cache_keeper.affinity_matrix
                 # 根据affinity矩阵直接广播
                 if self.args.broadcaster_strategy == "affinity_cluster":
                     self.broadcaster.affinity_cluster(sender_id, sender.model, affinity_matrix)
@@ -198,10 +158,8 @@ class Trainer(object):
             total_num += len(self.client_dic[c_id].train_set)
         # print("-----本地训练结束-----")
 
-        total_num *= self.args.epochs
         # print(total_num)
         local_train_acc = total_correct / total_num
-        total_loss /= self.args.epochs # 要除epochs，不然不方便横向对比
         avg_local_train_epsilon, avg_local_train_alpha = total_epsilon / len(self.client_dic), total_alpha / len(self.client_dic)
 
         if self.args.enable_dp:
@@ -226,7 +184,7 @@ class Trainer(object):
         for c_id in tqdm(self.client_dic, desc="mutual train"):
             client = self.client_dic[c_id]
             loss, correct,  local_loss, KLD_loss = client.deep_mutual_update()
-            print(f"client {c_id} choose neighbors {client.received_model_dict.keys()}, local_loss:{local_loss}, KLD_loss:{KLD_loss}")
+            # print(f"trainer: client {c_id} choose neighbors {client.received_model_dict.keys()}, local_loss:{local_loss}, KLD_loss:{KLD_loss}")
             total_loss += loss
             total_correct += correct
             total_local_loss += local_loss
@@ -245,27 +203,28 @@ class Trainer(object):
                                          "mutual/KLD_loss": total_KLD_loss,
                                          "mutual/train_acc": mutual_train_acc})
 
-    # 缓存本轮接收到的模型(覆盖或更新)
-    # def cache_received(self):
-    #     for c_id in self.client_dic:
-    #         client = self.client_dic[c_id]
-    #         if self.p_update_strategy == "reuse":
-    #             for received_id in client.received_model_dict:
-    #                 client.last_received_topology_weight_dict[received_id] = client.received_model_dict[received_id]
-    #                 client.last_received_topology_weight_dict[received_id] = client.received_topology_weight_dict[received_id]
-    #                 client.last_received_w_dict[received_id] = client.received_w_dict[received_id]
-    #         else:
-    #             client.last_received_model_dict = client.received_model_dict
-    #             client.last_received_topology_weight_dict = client.received_topology_weight_dict
-    #             client.last_received_w_dict = client.received_w_dict
+    # 权重插值
+    def weighted_interpolation_update(self):
+        for c_id in self.client_dic:
+            if self.strategy == "weighted_model_interpolation":
+                self.client_dic[c_id].weighted_model_interpolation_update()
+            elif self.strategy == "weighted_model_interpolation2":
+                self.client_dic[c_id].weighted_model_interpolation_update2()
+            elif self.strategy == "weighted_model_interpolation3":
+                self.client_dic[c_id].weighted_model_interpolation_update3()
+            elif self.strategy == "weighted_model_interpolation4":
+                self.client_dic[c_id].weighted_model_interpolation_update4()
 
-    # 清空client的无用缓存(本轮topK筛选后的received_model_list)
-    # def clear_cache(self):
-    #     for c_id in self.client_dic:
-    #         client = self.client_dic[c_id]
-    #         client.received_model_dict = {}
-    #         client.received_topology_weight_dict = {}
-    #         client.received_w_dict = {}
+
+    def cache_received(self):
+        for c_id in self.client_dic:
+            self.client_dic[c_id].cache_keeper.update_memory()
+
+    def clear_received(self):
+        for c_id in self.client_dic:
+            self.client_dic[c_id].received_model_dict = {}
+            self.client_dic[c_id].received_topology_weight_dict = {}
+            self.client_dic[c_id].received_w_dict = {}
 
     ###########
     # 方法组合 #
@@ -283,14 +242,14 @@ class Trainer(object):
         self.broadcast()
 
         # 在这里缓存received_model，避免后续被topK删减
-        # self.cache_received()
+        self.cache_received()
 
         # self.select_topK()
 
         self.mutual_update()
 
         # 因为已经缓存过了，这里只清空本轮记录
-        # self.clear_cache()
+        self.clear_received()
 
     # 仅进行互学习
     def mutual(self):
@@ -312,7 +271,6 @@ class Trainer(object):
     # 模型插值
     def model_interpolation(self):
         rounds = self.recorder.rounds
-
         # 本地训练
         self.local()
 
@@ -330,8 +288,16 @@ class Trainer(object):
             client = self.client_dic[c_id]
             client.model_interpolation_update()
 
-        # 因为已经缓存过了，这里只清空本轮记录
+        # clear_received，这里只清空本轮记录
         self.clear_cache()
+
+    def weighted_model_interpolation(self):
+        self.local()
+        self.broadcast()
+        self.cache_received()
+        self.weighted_interpolation_update()
+        self.clear_received()
+
 
     # 只跟标签重叠的client通信
     def oracle_class(self):
