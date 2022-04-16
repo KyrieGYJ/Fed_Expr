@@ -35,6 +35,33 @@ def compute_emd(targets_1, targets_2):
     return emd
 
 
+def eval(model, client, args):
+    criterion = client.criterion_CE
+    val_dataloader = client.validation_loader
+    epsilon = 1e-6
+    total_local_loss = 0.0
+    total_local_correct = 0.0
+
+    with torch.no_grad():
+        model.eval()
+        for data, label in val_dataloader:
+            data, label = data.to(args.device), label.to(args.device)
+            local_outputs = model(data)
+            local_loss = criterion(local_outputs, label)
+
+            pred = local_outputs.argmax(dim=1)
+            correct = pred.eq(label.view_as(pred)).sum()
+
+            if "cuda" in args.device:
+                local_loss = local_loss.cpu()
+                correct = correct.cpu()
+
+            total_local_loss += local_loss.item()
+            total_local_correct += correct
+    # todo tianjia1 self
+    return total_local_loss, total_local_correct
+
+
 def calc_eval(client, received_model_dict, args, loss_only = True):
     """
     计算本地模型与其他模型的权重

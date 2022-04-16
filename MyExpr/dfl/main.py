@@ -75,7 +75,7 @@ if not os.path.exists(f'./heatmap/{name}'):
     os.makedirs(f'./heatmap/{name}')
 generate_heatmap(emd_list, f"./heatmap/{name}/emd_heatmap2")
 
-args.turn_on_wandb = True
+args.turn_on_wandb = False
 
 # dfl6_20client_noniid
 # dfl6_20client_iid

@@ -214,11 +214,16 @@ class Trainer(object):
                 self.client_dic[c_id].weighted_model_interpolation_update3()
             elif self.strategy == "weighted_model_interpolation4":
                 self.client_dic[c_id].weighted_model_interpolation_update4()
+            elif self.strategy == "weighted_model_interpolation5":
+                self.client_dic[c_id].weighted_model_interpolation_update5()
 
+    def cache_model(self):
+        for c_id in self.client_dic:
+            self.client_dic[c_id].cache_keeper.cache_model()
 
     def cache_received(self):
         for c_id in self.client_dic:
-            self.client_dic[c_id].cache_keeper.update_memory()
+            self.client_dic[c_id].cache_keeper.update_received_memory()
 
     def clear_received(self):
         for c_id in self.client_dic:
@@ -234,10 +239,13 @@ class Trainer(object):
     def local_and_mutual_epoch(self):
         # 本地训练
         rounds = self.recorder.rounds
-        if rounds >= self.args.local_train_stop_point:
-            print("本地训练已于第{}个communication_round停止".format(self.args.local_train_stop_point))
-        else:
-            self.local()
+
+        # if rounds >= self.args.local_train_stop_point:
+        #     print("本地训练已于第{}个communication_round停止".format(self.args.local_train_stop_point))
+        # else:
+        #     self.local()
+
+        self.local()
 
         self.broadcast()
 
@@ -292,12 +300,12 @@ class Trainer(object):
         self.clear_cache()
 
     def weighted_model_interpolation(self):
+        self.cache_model()
         self.local()
         self.broadcast()
         self.cache_received()
         self.weighted_interpolation_update()
         self.clear_received()
-
 
     # 只跟标签重叠的client通信
     def oracle_class(self):

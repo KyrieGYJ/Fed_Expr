@@ -63,6 +63,7 @@ class Client(object):
         self.recorder = recorder
         self.broadcaster = broadcaster
         self.cache_keeper = keeper(self)
+        self.cache_keeper.initialize()
 
         ########################################
         # cache of current communication round #
@@ -79,7 +80,6 @@ class Client(object):
         # self.broadcast_w = []
         # self.update_w = []
         self.affinity_matrix = []
-
 
     ################
     # an iteration #
@@ -228,7 +228,7 @@ class Client(object):
             #         temp_paras = temp
             #     else:
             #         temp_paras.data.add_(temp)
-            for i, neighbor_para in enumerate(list)
+            # for i, neighbor_para in enumerate(list)
                 # temp = x_neighbor.data.mul(neighbor_weight).mul(1 - local_factor)
                 # x_paras.data.add_(temp)
             total_weight += neighbor_weight
@@ -286,6 +286,25 @@ class Client(object):
             total_weight += neighbor_weight
         x_paras.data.div_(total_weight)
 
+    def weighted_model_interpolation_update5(self):
+        model_backup = copy.deepcopy(self.model)
+        local_weight = self.cache_keeper.mutual_update_weight5[self.client_id]
+        total_weight = local_weight
+        for x_paras in self.model.parameters():
+            x_paras.data.mul_(local_weight)
+
+        for neighbor_id in self.received_model_dict.keys():
+            neighbor_model = self.received_model_dict[neighbor_id]
+            neighbor_weight = self.cache_keeper.mutual_update_weight5[neighbor_id]
+            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
+                temp = x_neighbor.data.mul(neighbor_weight)
+                x_paras.data.add_(temp)
+            total_weight += neighbor_weight
+        if total_weight == 0.:
+            # self.model.load_state_dict(self.cache_keeper.last_local_model.cpu().state_dict())
+            self.model.load_state_dict(model_backup.cpu().state_dict())
+        else:
+            x_paras.data.div_(total_weight)
 
     def select_topK(self):
         topK = self.topK_selector.select(self)
