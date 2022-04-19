@@ -8,7 +8,7 @@ def add_args():
                         help='neural network used in training')
 
     parser.add_argument('--dataset', type=str, default='cifar10', metavar='N',
-                        help='dataset used for training')
+                        help='dataset used for training, [mnist, cifar10, cifar100]')
 
     parser.add_argument('--data_dir', type=str, default='./../data',
                         help='data directory')

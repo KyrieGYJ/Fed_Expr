@@ -113,11 +113,24 @@ class Client(object):
             loss = loss.cpu()
         return loss.detach().numpy(), correct
 
+    def local_test(self):
+        total_loss, total_correct = 0., 0
+        self.model.eval()
+        self.model.to(self.args.device)
+        with torch.no_grad():
+            for _, (test_X, test_Y) in enumerate(self.test_loader):
+                test_X, test_Y = test_X.to(self.args.device), test_Y.to(self.args.device)
+                loss, correct = self.test(test_X, test_Y)
+                total_loss += loss.item()
+                total_correct += correct
+        return total_loss, total_correct
+
     ############
     # an epoch #
     ############
     def local_train(self):
         self.model.train()
+        self.model.to(self.args.device)
         epochs = self.args.epochs
         total_loss, total_correct = 0.0, 0.0
         for epoch in range(epochs):

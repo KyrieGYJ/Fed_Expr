@@ -15,6 +15,7 @@ def generate_heatmap(matrix, path):
     plt.savefig(path, dpi=600)
     plt.close()
 
+
 def get_clients_p_heatmap(self, path):
     print("绘制p矩阵热力图")
     for c_id in range(self.args.client_num_in_total):

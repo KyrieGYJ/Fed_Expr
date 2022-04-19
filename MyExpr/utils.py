@@ -44,6 +44,7 @@ def eval(model, client, args):
 
     with torch.no_grad():
         model.eval()
+        model.to(args.device)
         for data, label in val_dataloader:
             data, label = data.to(args.device), label.to(args.device)
             local_outputs = model(data)
@@ -58,67 +59,49 @@ def eval(model, client, args):
 
             total_local_loss += local_loss.item()
             total_local_correct += correct
-    # todo tianjia1 self
     return total_local_loss, total_local_correct
 
 
-def calc_eval(client, received_model_dict, args, loss_only = True):
+def calc_eval(client, received_model_dict, args):
     """
-    计算本地模型与其他模型的权重
-    ：local_para  本地模型参数
-    : parameters 其他模型参数集合
-    : return  权重列表
+    评估客户本身以及接收到的模型
+    ：client  客户
+    : received_model_dict 接收到的模型，自己设置，可以比较灵活
+    : return  eval_loss_dict, eval_acc_dict[包含本地模型]
     """
     # 因为在local_update后broadcast，采用本轮local_update后的模型和上一轮接收到的模型进行计算
     # 相当于基于接受者上一轮的模型预测：接受者的本地模型在本地经历过mutual_update和新一轮local_update后，发送者的新本地模型和它的仍然是相近的。
-    w_dict = {}
     criterion = client.criterion_CE
-    val_dataloader = client.validation_loader
     local_model = client.model
-    # received_dic = client.last_received_model_dict
-    # received_dict = client.received_model_dict
 
-    epsilon = 1e-6
-    total_local_loss = 0.0
-    total_local_correct = 0.0
-    loss_dict = {}
-    acc_dict = {}
+    total_local_loss, total_local_correct = 0.0, 0.0
+    loss_dict, acc_dict = {}, {}
     for c_id, model in received_model_dict.items():
-        loss_dict[c_id] = 0.0
-        acc_dict[c_id] = 0
+        loss_dict[c_id], acc_dict[c_id] = 0.0, 0.0
 
     with torch.no_grad():
         local_model.eval()
-        for data, label in val_dataloader:
+        local_model.to(args.device)
+        for data, label in client.validation_loader:
             data, label = data.to(args.device), label.to(args.device)
             local_outputs = local_model(data)
             local_loss = criterion(local_outputs, label)
-
             pred = local_outputs.argmax(dim=1)
             correct = pred.eq(label.view_as(pred)).sum()
-
-            if "cuda" in args.device:
-                local_loss = local_loss.cpu()
-                correct = correct.cpu()
-
-            total_local_loss += local_loss.item()
-            total_local_correct += correct
+            total_local_loss += local_loss.cpu().item()
+            total_local_correct += correct.cpu()
 
             for c_id, model in received_model_dict.items():
+                if c_id == client.client_id:
+                    continue
                 model.eval()
+                model.to(args.device)
                 received_outputs = model(data)
                 received_loss = criterion(received_outputs, label)
-
                 pred = received_outputs.argmax(dim=1)
                 correct = pred.eq(label.view_as(pred)).sum()
-
-                if "cuda" in args.device:
-                    received_loss = received_loss.cpu()
-                    correct = correct.cpu()
-
-                loss_dict[c_id] += received_loss.item()
-                acc_dict[c_id] += correct
-
+                loss_dict[c_id] += received_loss.cpu().item()
+                acc_dict[c_id] += correct.cpu()
     loss_dict[client.client_id] = total_local_loss
     acc_dict[client.client_id] = total_local_correct
     for c_id, correct in acc_dict.items():
@@ -126,7 +109,7 @@ def calc_eval(client, received_model_dict, args, loss_only = True):
     return loss_dict, acc_dict
 
 
-# 计算模型之间的权重(参考ICLR FedFomo)
+# 计算模型之间的权重(参考ICLR FedFomo) 废弃方法
 def calc_delta_loss(client, received_model_dict, args, loss_only = True):
     """
     计算本地模型与其他模型的权重

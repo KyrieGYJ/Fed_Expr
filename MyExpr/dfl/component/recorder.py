@@ -1,6 +1,7 @@
 import wandb
 
-
+# todo 添加基线。
+# todo 绘制client_weight曲线。
 class Recorder(object):
 
     def __init__(self, client_dic, topology_manager, trainer, broadcaster, topK_selector, data, args):
@@ -18,6 +19,7 @@ class Recorder(object):
         broadcaster.register_recorder(self)
         topK_selector.register_recoder(self)
 
+        # todo 垃圾代码
         trainer.non_iid_test_set = data.non_iid_test_set
         trainer.broadcaster = broadcaster
         trainer.test_non_iid = data.test_non_iid

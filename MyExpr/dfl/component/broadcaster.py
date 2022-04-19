@@ -187,12 +187,13 @@ class Broadcaster(object):
         client_dic = self.recorder.client_dic
         sender = client_dic[sender_id]
 
-        if affinity_matrix is None:
-            sender.cache_keeper.update_weight()
-            sender.cache_keeper.update_affinity_map()
-            affinity_matrix = sender.cache_keeper.affinity_matrix
-
-        sender.affinity_matrix = affinity_matrix
+        # todo
+        # if affinity_matrix is None:
+        #     sender.cache_keeper.update_weight()
+        #     sender.cache_keeper.update_affinity_map()
+        #     affinity_matrix = sender.cache_keeper.affinity_matrix
+        #
+        # sender.affinity_matrix = affinity_matrix
 
         # 取出所有邻居
         candidate = []
@@ -211,7 +212,6 @@ class Broadcaster(object):
         else:
             K = int(self.args.broadcast_K * self.args.client_num_in_total)
         # print(f"广播{K}个，num_clients_per_dist:{self.args.num_clients_per_dist}, total:{self.args.client_num_in_total}")
-        # topK = heapq.nlargest(K, candidate, lambda x: sender.affinity_matrix[sender_id][x])
         topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.affinity_matrix[sender_id][x])
 
         # 转发
@@ -220,6 +220,7 @@ class Broadcaster(object):
         for receiver_id in topK:
             # print(f"发送给client {receiver.client_id}")
             self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.cache_keeper.broadcast_weight)
+
 
     def affinity_baseline(self, sender_id, model, affinity_matrix=None):
         args = self.args
@@ -321,7 +322,9 @@ class Broadcaster(object):
             if not os.path.exists(path):
                 os.makedirs(path)
             generate_heatmap(p_list, f"{path}/client_{c_id}")
+            break
 
+    # 没用
     def get_clients_p_heatmap(self, path):
         print("绘制p矩阵热力图")
         for c_id in range(self.args.client_num_in_total):
@@ -331,6 +334,7 @@ class Broadcaster(object):
             if not os.path.exists(path):
                 os.makedirs(path)
             generate_heatmap(p_list, f"{path}/client_{c_id}")
+            break
 
     def pass_heatmap(self, path):
         pass
@@ -364,5 +368,3 @@ class Broadcaster(object):
             receiver.received_topology_weight_dict[sender_id] = topology_weight
         if w is not None:
             receiver.received_w_dict[sender_id] = w
-
-

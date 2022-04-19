@@ -8,7 +8,7 @@ class DataLoader(object):
     def __init__(self, data_path, batch_size):
         self.data_path = data_path
         self.batch_size = batch_size
-        # len(SUSY) = 5,000,000
+        # len(SUSY2) = 5,000,000
         # The last 500,000 examples are used as a test set.n about your data set.
         self.train_X = []
         self.train_Y = []

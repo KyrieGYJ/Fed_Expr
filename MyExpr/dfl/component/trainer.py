@@ -32,6 +32,8 @@ class Trainer(object):
         # 记录相互重叠的类集合
         self.overlap_client = {}
 
+        self.best_accuracy = 0.
+
         # latent
         self.dist_client_dict = None
         self.client_dist_dict = None
@@ -92,10 +94,11 @@ class Trainer(object):
     # 广播
     def broadcast(self):
         # print("-----开始广播-----")
-        for c_id in self.client_dic:
+        for c_id in tqdm(self.client_dic, desc="broadcast"):
             self.client_dic[c_id].broadcast()
             # print("client {} 广播完毕".format(c_id))
 
+        # todo 看下这里的耗时
         # 如果是affinity算法，第一轮是flood广播。接收到第一轮的neighbor模型后，要计算初始权重，然后再广播出去，聚合接收到的所有权重，生成初始的affinity矩阵。
         if self.args.broadcaster_strategy in ["affinity_cluster", "affinity_baseline", "affinity_topK"] and self.recorder.rounds == 0:
             print("额外初始化affinity矩阵。。。")
@@ -103,22 +106,22 @@ class Trainer(object):
             self.cache_received()
 
             # 计算权重
-            for sender_id in self.client_dic:
+            for sender_id in tqdm(self.client_dic, desc="initialize weight"):
                 self.client_dic[sender_id].cache_keeper.update_weight()
 
             # flood广播权重
-            for sender_id in self.client_dic:
+            for sender_id in tqdm(self.client_dic, desc="broadcast initial weight"):
                 self.client_dic[sender_id].broadcast()
 
             self.cache_received()
 
             # 所有client聚合上一轮接收到的权重 todo 改这块
             print("根据接收到的邻居权重计算affinity矩阵，根据affinity聚类重新广播")
-            for sender_id in self.client_dic:
+            for sender_id in tqdm(self.client_dic, desc="initialize affinity"):
                 self.client_dic[sender_id].cache_keeper.update_affinity_map()
 
             # 计算affinity矩阵，并采用affinity算法广播旧权重
-            for sender_id in self.client_dic:
+            for sender_id in tqdm(self.client_dic, desc="broadcast again"):
                 sender = self.client_dic[sender_id]
                 # 计算affinity矩阵
                 affinity_matrix = sender.cache_keeper.affinity_matrix
@@ -126,9 +129,13 @@ class Trainer(object):
                 if self.args.broadcaster_strategy == "affinity_cluster":
                     self.broadcaster.affinity_cluster(sender_id, sender.model, affinity_matrix)
                 elif self.args.broadcaster_strategy == "affinity_topK":
-                    self.broadcaster.affinity_topK(sender_id, sender.model, affinity_matrix)
+                    self.broadcaster.affinity_topK(sender_id, sender.model)
                 else:
                     self.broadcaster.affinity_baseline(sender_id, sender.model, affinity_matrix)
+
+    def update_weight(self):
+        for sender_id in tqdm(self.client_dic, desc="update weight"):
+            self.client_dic[sender_id].cache_keeper.update_weight()
 
     # 选择topk
     def select_topK(self):
@@ -205,7 +212,7 @@ class Trainer(object):
 
     # 权重插值
     def weighted_interpolation_update(self):
-        for c_id in self.client_dic:
+        for c_id in tqdm(self.client_dic, desc="weighted_interpolation"):
             if self.strategy == "weighted_model_interpolation":
                 self.client_dic[c_id].weighted_model_interpolation_update()
             elif self.strategy == "weighted_model_interpolation2":
@@ -217,6 +224,7 @@ class Trainer(object):
             elif self.strategy == "weighted_model_interpolation5":
                 self.client_dic[c_id].weighted_model_interpolation_update5()
 
+    # todo cache_received -> update_received_memory 已经做了
     def cache_model(self):
         for c_id in self.client_dic:
             self.client_dic[c_id].cache_keeper.cache_model()
@@ -299,13 +307,25 @@ class Trainer(object):
         # clear_received，这里只清空本轮记录
         self.clear_cache()
 
+    # 权重模型插值
     def weighted_model_interpolation(self):
         self.cache_model()
         self.local()
         self.broadcast()
         self.cache_received()
+        self.update_weight()
         self.weighted_interpolation_update()
         self.clear_received()
+
+
+    # Pens
+
+
+    # push-sum
+
+    # gossip
+
+
 
     # 只跟标签重叠的client通信
     def oracle_class(self):
@@ -389,21 +409,16 @@ class Trainer(object):
     # test local per epoch
     def local_test(self):
         rounds = self.recorder.rounds
-        total_loss = 0.0
-        total_correct = 0.0
-
+        total_loss, total_correct = 0., 0.
         total_num = 0
 
-        for c_id in self.client_dic.keys():
+        for c_id in tqdm(self.client_dic, desc="local_test"):
             client = self.client_dic[c_id]
+            loss, correct = client.local_test()
+            total_loss += loss
+            total_correct += correct
             # print("client {} contains {} test data".format(c_id, len(client.test_loader)))
             total_num += len(client.test_set)
-            with torch.no_grad():
-                for _, (test_X, test_Y) in enumerate(client.test_loader):
-                    test_X, test_Y = test_X.to(self.args.device), test_Y.to(self.args.device)
-                    loss, correct = client.test(test_X, test_Y)
-                    total_loss += loss.item()
-                    total_correct += correct
 
         avg_acc = total_correct / total_num
         print("local_test_loss:{}, avg_local_test_acc:{}".format(total_loss, avg_acc))
@@ -411,7 +426,36 @@ class Trainer(object):
         # print("-----上传至wandb-----")
         if self.args.turn_on_wandb:
             wandb.log(step=rounds, data={"local_test/loss": total_loss, "local_test/avg_acc": avg_acc})
+            if avg_acc > self.best_accuracy:
+                wandb.run.summary["best_accuracy"] = avg_acc
+                self.best_accuracy = avg_acc
 
+    def non_iid_test_latent(self):
+        rounds = self.recorder.rounds
+        total_loss, total_correct = 0.0, 0.0
+        total_num = 0
+
+        for dist in range(self.args.num_distributions):
+            client_list = self.dist_client_dict[dist]
+            total_num += len(self.non_iid_test_set[dist]) * len(client_list)
+            with torch.no_grad():
+                for _, (test_X, test_Y) in enumerate(self.test_non_iid[dist]):
+                    test_X, test_Y =  test_X.to(self.args.device), test_Y.to(self.args.device)
+                    for c_id in client_list:
+                        client = self.client_dic[c_id]
+                        loss, correct = client.test(test_X, test_Y)
+                        total_loss += loss.item()
+                        total_correct += correct
+
+        avg_loss, avg_acc = total_loss / total_num, total_correct / total_num
+        if self.args.turn_on_wandb:
+            wandb.log(step=rounds, data={"avg_non-iid_test_loss": avg_loss, "avg_non-iid_test_acc": avg_acc})
+        print("avg_non-iid_test_loss:{}, avg_non-iid_test_acc:{}".format(avg_loss, avg_acc))
+
+    def non_iid_test_pass(self):
+        pass
+
+    # 废弃的方法
     def overall_test(self):
         rounds = self.recorder.rounds
         total_loss = 0.0
@@ -459,29 +503,3 @@ class Trainer(object):
         if self.args.turn_on_wandb:
             wandb.log(step=rounds, data={"avg_non-iid_test_loss": avg_loss, "avg_non-iid_test_acc": avg_acc})
         print("avg_non-iid_test_loss:{}, avg_non-iid_test_acc:{}".format(avg_loss, avg_acc))
-
-    def non_iid_test_latent(self):
-        rounds = self.recorder.rounds
-        total_loss, total_correct = 0.0, 0.0
-        total_num = 0
-
-        for dist in range(self.args.num_distributions):
-            client_list = self.dist_client_dict[dist]
-            total_num += len(self.non_iid_test_set[dist]) * len(client_list)
-            with torch.no_grad():
-                for _, (test_X, test_Y) in enumerate(self.test_non_iid[dist]):
-                    test_X, test_Y =  test_X.to(self.args.device), test_Y.to(self.args.device)
-                    for c_id in client_list:
-                        client = self.client_dic[c_id]
-                        loss, correct = client.test(test_X, test_Y)
-                        total_loss += loss.item()
-                        total_correct += correct
-
-        avg_loss, avg_acc = total_loss / total_num, total_correct / total_num
-        if self.args.turn_on_wandb:
-            wandb.log(step=rounds, data={"avg_non-iid_test_loss": avg_loss, "avg_non-iid_test_acc": avg_acc})
-        print("avg_non-iid_test_loss:{}, avg_non-iid_test_acc:{}".format(avg_loss, avg_acc))
-
-    def non_iid_test_pass(self):
-        pass
-

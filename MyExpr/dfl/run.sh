@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# todo 还有数据集选择
+# todo 包装成多个函数
 LR=$1
 MODEL=$2
 EPOCH=$3
@@ -16,6 +16,7 @@ NEIGHBOR_UNDIRECTED=${12}
 LOCAL_TRAIN_STOP_POINT=${13}
 NAME=${14}
 BK=${15}
+NUM_DIST=${16}
 
 
 python3 main.py \
@@ -25,6 +26,7 @@ python3 main.py \
 --batch_size $BS \
 --client_num_in_total $N \
 --broadcast_K $BK \
+--num_distributions $NUM_DIST \
 --device $DEVICE \
 --trainer_strategy $TRAINER_STRATEGY \
 --topK_strategy $TOPK_STRATEGY \

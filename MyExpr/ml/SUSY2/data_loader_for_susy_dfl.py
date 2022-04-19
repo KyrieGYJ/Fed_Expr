@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 
 class DataLoader(object):
     def __init__(self, data_name, data_path, client_id_list, train_sample_num_in_total, beta):
-        # SUSY
+        # SUSY2
         self.data_name = data_name
         self.data_path = data_path
         self.client_list = client_id_list

@@ -5,7 +5,7 @@ import wandb
 
 from FedML.fedml_api.standalone.decentralized.client_pushsum import ClientPushsum
 from FedML.fedml_api.standalone.decentralized.topology_manager import TopologyManager
-from MyExpr.dfl.SUSY.client_test import ClientTEST
+from MyExpr.ml.SUSY2 import ClientTEST
 
 
 # 主训练方法

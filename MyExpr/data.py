@@ -138,6 +138,7 @@ class Data(object):
         self.client_dist_dict = {}
         # 记录每个分布包含哪些client
         self.dist_client_dict = {}
+
         # 按client划分的dataloader
         self.train_loader, self.validation_loader, self.test_loader = [], [], []
         # 按client划分的dataset
@@ -151,6 +152,7 @@ class Data(object):
         # ImageNet normalization constants
         imagenet_normalize = transforms.Normalize(mean=(0.485, 0.456, 0.406),
                                                   std=(0.229, 0.224, 0.225))
+
         self.setup_transform = transforms.Compose([transforms.Resize(256),
                                                    transforms.RandomCrop(224),
                                                    transforms.RandomHorizontalFlip(),
@@ -172,6 +174,8 @@ class Data(object):
             self.generate_loader = self.non_iid_latent
         elif args.data_distribution == "non-iid_latent2":
             self.generate_loader = self.non_iid_latent_decrapted
+
+        print(f"use dataset: {self.args.dataset}")
 
     # todo 改编自LG-FedAvg，开源前加引用
     def non_iid_pathological(self):
@@ -247,6 +251,7 @@ class Data(object):
         train_data = self.train_data
         test_data = self.test_data
         args = self.args
+        # print(f"len(train_dataset)={len(train_data)}, len(test_data)={len(test_data)}")
 
         dict_users_train, dict_users_label = self.pathological2_helper(train_data)
         dict_users_test, dict_users_label = self.pathological2_helper(test_data)
@@ -260,6 +265,7 @@ class Data(object):
 
         # 获得每个标签对应的测试数据
         dic_test_data = self.data_per_label(test_data)
+        print(f"data: {[(label, len(dic_test_data[label])) for label in dic_test_data]}")
 
         # 按顺序取，确保class_test_dataset下标和label能对应上
         for i in range(len(dic_test_data)):
@@ -1163,6 +1169,7 @@ class Data(object):
             for i in range(self.args.num_clients_per_dist):
                 # print(dist['clients_data'][i][1])
                 emd_list.append(compute_emd([self.train_data.targets[x] for x in dist['clients_data'][i][1]], self.train_data.targets))
+
         # average_emd = np.mean(emd_list, axis=0)
         print(emd_list)
         average_emd = np.mean(emd_list)

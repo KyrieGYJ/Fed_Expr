@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../..")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../FedML")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../")))
 
-from MyExpr.dfl.SUSY.modified_dfl_api import myexpr_decentralized_fl
+from MyExpr.ml.SUSY2.modified_dfl_api import myexpr_decentralized_fl
 from fedml_api.model.linear.lr import LogisticRegression
 from fedml_api.data_preprocessing.UCI.data_loader_for_susy_and_ro import DataLoader
 
@@ -27,7 +27,7 @@ parser.add_argument('--learning_rate', type=float, default=0.01)
 parser.add_argument('--weight_decay', type=float, default=0.0001)
 parser.add_argument('--batch_size', type=int, default=1)
 
-parser.add_argument('--data_name', type=str, default="SUSY", help='SUSY; RO')
+parser.add_argument('--data_name', type=str, default="SUSY2", help='SUSY2; RO')
 parser.add_argument('--epoch', type=int, default=1, help='1,2,3,4,5')
 
 parser.add_argument('--run_id', type=int, default=0)
@@ -81,8 +81,8 @@ def main():
 
     data_name = args.data_name
     data_path = ""
-    if data_name == "SUSY":
-        data_path = ROOT_PATH + "SUSY/SUSY.csv"
+    if data_name == "SUSY2":
+        data_path = ROOT_PATH + "SUSY2/SUSY2.csv"
         input_dim = 18
     elif data_name == "RO":
         data_path = ROOT_PATH + "room_occupancy/datatraining.txt"

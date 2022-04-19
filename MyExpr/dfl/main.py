@@ -61,9 +61,6 @@ if args.enable_dp:
 for c_id in tqdm(range(client_num_in_total), desc='setting up client'):
     c = Client(model_builder(num_classes=10), c_id, args, data, topK_selector, recorder, broadcaster)
     client_dic[c_id] = c
-# 等client_dic完整后，在这里初始化affinity矩阵
-# for c_id in range(client_num_in_total):
-#     client_dic[c_id].initialize()
 
 broadcaster.initialize()
 
@@ -71,18 +68,19 @@ name = None if args.name == '' else args.name
 
 # 计算client数据之间的emd热力图
 emd_list = calc_emd_heatmap(data.train_data, data.train_idx_dict, args)
-if not os.path.exists(f'./heatmap/{name}'):
-    os.makedirs(f'./heatmap/{name}')
-generate_heatmap(emd_list, f"./heatmap/{name}/emd_heatmap2")
+if not os.path.exists(f'./heatmap_expr/{name}'):
+    os.makedirs(f'./heatmap_expr/{name}')
+generate_heatmap(emd_list, f"./heatmap_expr/{name}/emd_heatmap2")
 
-args.turn_on_wandb = False
+args.turn_on_wandb = True
 
 # dfl6_20client_noniid
 # dfl6_20client_iid
 # dfl6
 # dfl6_iid
+# ours_expr
 if args.turn_on_wandb:
-    wandb.init(project="weight_test",
+    wandb.init(project="ours_expr2",
                entity="kyriegyj",
                name=name,
                config=args)
@@ -128,12 +126,12 @@ for rounds in range(args.comm_round):
     # if "non-iid" in args.data_distribution:
     #     trainer.non_iid_test()
     # 打印affinity热力图（如果采用聚类广播算法）
-    broadcaster.get_w_heatmap(f"./heatmap/{name}/weight_{rounds}")
+    broadcaster.get_w_heatmap(f"./heatmap_expr/{name}/weight_{rounds}")
     # 打印p矩阵热力图
     # if args.broadcaster_strategy == "affinity_topK":
     #     broadcaster.get_clients_p_heatmap(f"./heatmap/{name}/p_{rounds}")
     # 打印通信频率热力图
-    broadcaster.get_freq_heatmap(f"./heatmap/{name}/freq_{rounds}")
+    broadcaster.get_freq_heatmap(f"./heatmap_expr/{name}/freq_{rounds}")
     print("-----第{}轮训练结束-----".format(rounds))
 
 
