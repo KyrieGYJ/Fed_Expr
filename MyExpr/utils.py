@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 # report the average Earth Mover’s Distance (EMD) between local client data and the total dataset
 # across all clients to quantify non-IIDness.
+
 def compute_emd(targets_1, targets_2):
     """Calculates Earth Mover's Distance between two array-like objects (dataset labels)"""
     total_targets = []
@@ -106,6 +107,44 @@ def calc_eval(client, received_model_dict, args):
     acc_dict[client.client_id] = total_local_correct
     for c_id, correct in acc_dict.items():
         acc_dict[c_id] = correct / len(client.validation_set)
+    return loss_dict, acc_dict
+
+
+def calc_eval_speed_up_using_cache(cache_keeper):
+    args = cache_keeper.args
+    host = cache_keeper.host
+    criterion = host.criterion_CE
+    loss_dict, acc_dict = {}, {}
+    new_model_dict = {host.client_id:host.model}
+    new_model_dict.update(host.received_model_dict)
+
+    for c_id, model in new_model_dict.items():
+        loss_dict[c_id], acc_dict[c_id] = 0.0, 0.0
+
+    # 计算新接收到的模型(包括当前的host model)
+    # print(f"received model:{host.received_model_dict.keys()}")
+    with torch.no_grad():
+        for data, label in host.validation_loader:
+            data, label = data.to(args.device), label.to(args.device)
+            for c_id, model in new_model_dict.items():
+                model.eval()
+                model.to(args.device)
+                received_outputs = model(data)
+                received_loss = criterion(received_outputs, label)
+                pred = received_outputs.argmax(dim=1)
+                correct = pred.eq(label.view_as(pred)).sum()
+                loss_dict[c_id] += received_loss.cpu().item()
+                acc_dict[c_id] += correct.cpu()
+
+    # 用memory填充未接收到的部分
+    for i in range(args.client_num_in_total):
+        if i not in new_model_dict:
+            loss_dict[i] = cache_keeper.raw_eval_loss_list[i]
+            acc_dict[i] = cache_keeper.raw_eval_acc_list[i]
+
+    # correct转acc
+    for c_id, correct in acc_dict.items():
+        acc_dict[c_id] = correct / len(host.validation_set)
     return loss_dict, acc_dict
 
 
@@ -305,3 +344,7 @@ def print_debug(stdout, prefix=''):
     if DEBUG:
         print(f'DEBUG - {prefix}: {stdout}')
 
+# if __name__ == '__main__':
+#     a = {'a': 1}
+#     b = {'b': 2}
+#     print(a|b, a, b)

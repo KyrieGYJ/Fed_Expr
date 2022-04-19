@@ -1,3 +1,5 @@
+import sys
+
 import torch.nn as nn
 import torch
 import wandb
@@ -98,7 +100,7 @@ class Trainer(object):
             self.client_dic[c_id].broadcast()
             # print("client {} 广播完毕".format(c_id))
 
-        # todo 看下这里的耗时
+        # todo 修改启动阶段代码
         # 如果是affinity算法，第一轮是flood广播。接收到第一轮的neighbor模型后，要计算初始权重，然后再广播出去，聚合接收到的所有权重，生成初始的affinity矩阵。
         if self.args.broadcaster_strategy in ["affinity_cluster", "affinity_baseline", "affinity_topK"] and self.recorder.rounds == 0:
             print("额外初始化affinity矩阵。。。")
@@ -107,6 +109,8 @@ class Trainer(object):
 
             # 计算权重
             for sender_id in tqdm(self.client_dic, desc="initialize weight"):
+                # initial model dif
+                # initial delta loss
                 self.client_dic[sender_id].cache_keeper.update_weight()
 
             # flood广播权重
@@ -137,6 +141,14 @@ class Trainer(object):
         for sender_id in tqdm(self.client_dic, desc="update weight"):
             self.client_dic[sender_id].cache_keeper.update_weight()
 
+    def update_broadcast_weight(self):
+        for sender_id in tqdm(self.client_dic, desc="update broadcast weight"):
+            self.client_dic[sender_id].cache_keeper.update_broadcast_weight()
+
+    def update_update_weight(self):
+        for sender_id in tqdm(self.client_dic, desc="update update weight"):
+            self.client_dic[sender_id].cache_keeper.update_update_weight()
+
     # 选择topk
     def select_topK(self):
         # print("-----开始选择topK-----")
@@ -153,7 +165,6 @@ class Trainer(object):
         total_epsilon, total_alpha = 0.0, 0.0
         total_num = 0
         for c_id in tqdm(self.client_dic, desc="local train"):
-            # print("{}：开始训练".format(c_id))
             if self.args.enable_dp:
                 loss, correct, epsilon, alpha = self.client_dic[c_id].local_train()
                 total_epsilon += epsilon
@@ -227,7 +238,7 @@ class Trainer(object):
     # todo cache_received -> update_received_memory 已经做了
     def cache_model(self):
         for c_id in self.client_dic:
-            self.client_dic[c_id].cache_keeper.cache_model()
+            self.client_dic[c_id].cache_keeper.cache_last_local()
 
     def cache_received(self):
         for c_id in self.client_dic:
@@ -308,12 +319,25 @@ class Trainer(object):
         self.clear_cache()
 
     # 权重模型插值
+    # def weighted_model_interpolation(self):
+    #     self.cache_model()
+    #     self.local()
+    #     self.broadcast()
+    #
+    #     self.cache_received()
+    #     self.update_weight()
+    #     self.weighted_interpolation_update()
+    #     self.clear_received()
+
+
+
     def weighted_model_interpolation(self):
-        self.cache_model()
         self.local()
+        if self.recorder.rounds > 0:
+            self.update_broadcast_weight()
         self.broadcast()
         self.cache_received()
-        self.update_weight()
+        self.update_update_weight()
         self.weighted_interpolation_update()
         self.clear_received()
 

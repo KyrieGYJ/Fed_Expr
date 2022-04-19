@@ -42,13 +42,8 @@ nohup bash run.sh 0.01 "TFConvNet" 1 64 60 "cuda:3" "weighted_model_interpolatio
 nohup bash run.sh 0.01 "TFConvNet" 1 64 60 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" \
 "non-iid_latent2" 150 100 999 "c60_ours02_latent10" 0.2 10 > log_expr/c60_ours02_latent10.log 2>&1 &
 
-
-
-
-
-
-
-
+bash run.sh 0.01 "TFConvNet" 1 64 60 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" \
+"non-iid_latent2" 150 100 999 "test2" 0.2 2
 
 
 # GPU3

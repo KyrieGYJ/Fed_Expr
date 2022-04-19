@@ -72,7 +72,7 @@ if not os.path.exists(f'./heatmap_expr/{name}'):
     os.makedirs(f'./heatmap_expr/{name}')
 generate_heatmap(emd_list, f"./heatmap_expr/{name}/emd_heatmap2")
 
-args.turn_on_wandb = True
+args.turn_on_wandb = False
 
 # dfl6_20client_noniid
 # dfl6_20client_iid
@@ -80,7 +80,7 @@ args.turn_on_wandb = True
 # dfl6_iid
 # ours_expr
 if args.turn_on_wandb:
-    wandb.init(project="ours_expr2",
+    wandb.init(project="ours_expr",
                entity="kyriegyj",
                name=name,
                config=args)

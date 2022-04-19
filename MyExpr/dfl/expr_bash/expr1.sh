@@ -24,7 +24,7 @@ nohup bash run.sh 0.01 "TFConvNet" 1 64 20 "cuda:3" "weighted_model_interpolatio
 nohup bash run.sh 0.01 "TFConvNet" 1 64 50 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" \
 "non-iid_pathological" 150 100 999 "c50_ours02_path" 0.2 1 > log_expr/c50_ours02_path.log 2>&1 &
 
-nohup bash run.sh 0.01 "TFConvNet" 1 64 100 "cuda:2" "weighted_model_interpolation3" "loss" "affinity_topK" \
+nohup bash run.sh 0.01 "TFConvNet" 1 64 100 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" \
 "non-iid_pathological" 150 100 999 "c100_ours02_path" 0.2 1 > log_expr/c100_ours02_path.log 2>&1 &
 
 # K=0.5
@@ -46,4 +46,4 @@ nohup bash run.sh 0.01 "TFConvNet" 1 64 100 "cuda:3" "weighted_model_interpolati
 #nohup bash run.sh > ../MyExpr/dfl/log_expr/c100_FedFomo_path.log 2>&1 &
 
 bash run.sh 0.01 "TFConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" \
-"non-iid_pathological" 150 100 999 "c20_ours05_path" 0.5 1
+"non-iid_pathological" 150 100 999 "test1" 0.5 1
