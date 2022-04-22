@@ -179,6 +179,7 @@ class Broadcaster(object):
     # 取topK
     def affinity_topK(self, sender_id, model, affinity_matrix=None):
         # 第一轮全发，避免后续出现差错
+        # todo 并不能这样做，十分浪费资源，不适应去中心化环境（边缘设备资源受限），而且这样做广播效果太好了。
         if affinity_matrix is None and self.recorder.rounds == 0:
             self.flood(sender_id, model)
             return
@@ -186,14 +187,6 @@ class Broadcaster(object):
         # 根据上一轮接收到的neighbor模型，更新affinity矩阵，对矩阵聚类，并转发自身模型以及affinity权重到对应聚类上
         client_dic = self.recorder.client_dic
         sender = client_dic[sender_id]
-
-        # todo
-        # if affinity_matrix is None:
-        #     sender.cache_keeper.update_weight()
-        #     sender.cache_keeper.update_affinity_map()
-        #     affinity_matrix = sender.cache_keeper.affinity_matrix
-        #
-        # sender.affinity_matrix = affinity_matrix
 
         # 取出所有邻居
         candidate = []
@@ -212,6 +205,7 @@ class Broadcaster(object):
         else:
             K = int(self.args.broadcast_K * self.args.client_num_in_total)
         # print(f"广播{K}个，num_clients_per_dist:{self.args.num_clients_per_dist}, total:{self.args.client_num_in_total}")
+        # todo candidate要shuffle
         topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.affinity_matrix[sender_id][x])
 
         # 转发
@@ -220,7 +214,6 @@ class Broadcaster(object):
         for receiver_id in topK:
             # print(f"发送给client {receiver.client_id}")
             self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.cache_keeper.broadcast_weight)
-
 
     def affinity_baseline(self, sender_id, model, affinity_matrix=None):
         args = self.args
@@ -316,7 +309,7 @@ class Broadcaster(object):
     def get_clients_affinity_heatmap(self, path):
         print("绘制affinity热力图")
         for c_id in range(self.args.client_num_in_total):
-            p_list = self.recorder.client_dic[c_id].affinity_matrix
+            p_list = self.recorder.client_dic[c_id].cache_keeper.affinity_matrix
             if p_list is None or p_list == []:
                 continue
             if not os.path.exists(path):
@@ -328,7 +321,7 @@ class Broadcaster(object):
     def get_clients_p_heatmap(self, path):
         print("绘制p矩阵热力图")
         for c_id in range(self.args.client_num_in_total):
-            p_list = self.recorder.client_dic[c_id].p
+            p_list = self.recorder.client_dic[c_id].cache_keeper.p
             if p_list is None or p_list == []:
                 continue
             if not os.path.exists(path):

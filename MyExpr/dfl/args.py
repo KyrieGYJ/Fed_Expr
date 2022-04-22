@@ -41,7 +41,7 @@ def add_args():
     parser.add_argument('--num_clients_per_dist', type=int, default=20,
                         help="the number of client of each distribution in latent non-iid manner")
 
-    parser.add_argument('--topology_neighbors_num_undirected', type=int, default=20)
+    parser.add_argument('--topology_neighbors_num_undirected', type=int, default=999)
 
     parser.add_argument('--topology_neighbors_num_directed', type=int, default=0)
 
@@ -72,7 +72,10 @@ def add_args():
     parser.add_argument('--num_workers', type=int, default=10)
 
     parser.add_argument('--name', type=str, default='',
-                        help='name of current run')
+                        help='name of current mission')
+
+    parser.add_argument('--project_name', type=str, default='',
+                        help='name of current project')
 
     parser.add_argument('--data_distribution', type=str, default='iid',
                         help='iid, non-iid_pathological, non-iid_latent')
@@ -80,6 +83,12 @@ def add_args():
     parser.add_argument('--data_seed', type=int, default=0, help="data seed")
 
     parser.add_argument('--num_classes', type=int, default=10)
+
+    parser.add_argument('--aggregate_threshold', type=float, default=0.1,
+                        help="the minimum aggregate weight of self newly-trained model")
+
+    parser.add_argument('--pretrain_epoch', type=int, default=0,
+                        help="local train round before starting federated learning")
 
     # 兼容fedfomo的latent-non-iid
     parser.add_argument('--seed', default=0, type=int, help="Random seed (default 0)")

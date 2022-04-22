@@ -115,8 +115,10 @@ def calc_eval_speed_up_using_cache(cache_keeper):
     host = cache_keeper.host
     criterion = host.criterion_CE
     loss_dict, acc_dict = {}, {}
-    new_model_dict = {host.client_id:host.model}
-    new_model_dict.update(host.received_model_dict)
+    # new_model_dict = {host.client_id:host.model}
+    new_model_dict = host.received_model_dict
+
+    # known_set = cache_keeper.known_set
 
     for c_id, model in new_model_dict.items():
         loss_dict[c_id], acc_dict[c_id] = 0.0, 0.0
@@ -136,11 +138,15 @@ def calc_eval_speed_up_using_cache(cache_keeper):
                 loss_dict[c_id] += received_loss.cpu().item()
                 acc_dict[c_id] += correct.cpu()
 
+
     # 用memory填充未接收到的部分
     for i in range(args.client_num_in_total):
         if i not in new_model_dict:
             loss_dict[i] = cache_keeper.raw_eval_loss_list[i]
             acc_dict[i] = cache_keeper.raw_eval_acc_list[i]
+        # if i not in new_model_dict and i in known_set:
+        #     loss_dict[i] = cache_keeper.raw_eval_loss_list[i]
+        #     acc_dict[i] = cache_keeper.raw_eval_acc_list[i]
 
     # correct转acc
     for c_id, correct in acc_dict.items():
@@ -343,8 +349,3 @@ def print_debug(stdout, prefix=''):
     DEBUG = True
     if DEBUG:
         print(f'DEBUG - {prefix}: {stdout}')
-
-# if __name__ == '__main__':
-#     a = {'a': 1}
-#     b = {'b': 2}
-#     print(a|b, a, b)

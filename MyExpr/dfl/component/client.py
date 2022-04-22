@@ -3,10 +3,8 @@ import torch.nn as nn
 import numpy as np
 import copy
 from opacus import PrivacyEngine
-import logging
-import math
 
-# from MyExpr.utils import cal_delta_loss, cal_model_dif
+
 from .cache_keeper import keeper
 
 
@@ -125,9 +123,9 @@ class Client(object):
                 total_correct += correct
         return total_loss, total_correct
 
-    ############
-    # an epoch #
-    ############
+    ##############
+    # epoch-wise #
+    ##############
     def local_train(self):
         self.model.train()
         self.model.to(self.args.device)
@@ -235,15 +233,6 @@ class Client(object):
             neighbor_weight = self.cache_keeper.mutual_update_weight[neighbor_id]
             if neighbor_weight > 0:
                 flag = True
-            # for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
-            #     temp = x_neighbor.data.mul(neighbor_weight).mul(1 - local_factor)
-            #     if temp_paras is None:
-            #         temp_paras = temp
-            #     else:
-            #         temp_paras.data.add_(temp)
-            # for i, neighbor_para in enumerate(list)
-                # temp = x_neighbor.data.mul(neighbor_weight).mul(1 - local_factor)
-                # x_paras.data.add_(temp)
             total_weight += neighbor_weight
         if temp_paras is not None:
             temp_paras.data.div_(total_weight)

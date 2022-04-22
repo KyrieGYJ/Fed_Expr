@@ -89,51 +89,50 @@ class Trainer(object):
             self.central_server = Server(self.args)
             self.train = self.fedavg
 
-    ###########
-    # 基础方法 #
-    ##########
+    ###################
+    # 基础方法(批量操作) #
+    ###################
 
     # 广播
     def broadcast(self):
-        # print("-----开始广播-----")
         for c_id in tqdm(self.client_dic, desc="broadcast"):
             self.client_dic[c_id].broadcast()
-            # print("client {} 广播完毕".format(c_id))
 
         # todo 修改启动阶段代码
         # 如果是affinity算法，第一轮是flood广播。接收到第一轮的neighbor模型后，要计算初始权重，然后再广播出去，聚合接收到的所有权重，生成初始的affinity矩阵。
         if self.args.broadcaster_strategy in ["affinity_cluster", "affinity_baseline", "affinity_topK"] and self.recorder.rounds == 0:
             print("额外初始化affinity矩阵。。。")
 
+            # 缓存接收到的模型
             self.cache_received()
 
-            # 计算权重
+            # (1) 计算广播权重。(2) 初始化dif_list
             for sender_id in tqdm(self.client_dic, desc="initialize weight"):
-                # initial model dif
+                self.client_dic[sender_id].cache_keeper.update_local_eval()
+                self.client_dic[sender_id].cache_keeper.update_raw_eval_list()
+                self.client_dic[sender_id].cache_keeper.update_broadcast_weight()
+                self.client_dic[sender_id].cache_keeper.update_model_dif()
                 # initial delta loss
-                self.client_dic[sender_id].cache_keeper.update_weight()
 
-            # flood广播权重
+            # flood发送广播权重
             for sender_id in tqdm(self.client_dic, desc="broadcast initial weight"):
                 self.client_dic[sender_id].broadcast()
 
+            # 缓存接收到的模型和广播权重
             self.cache_received()
 
-            # 所有client聚合上一轮接收到的权重 todo 改这块
-            print("根据接收到的邻居权重计算affinity矩阵，根据affinity聚类重新广播")
+            # 所有client根据接收到的广播权重初始化affinity矩阵
             for sender_id in tqdm(self.client_dic, desc="initialize affinity"):
                 self.client_dic[sender_id].cache_keeper.update_affinity_map()
 
-            # 计算affinity矩阵，并采用affinity算法广播旧权重
+            # 根据affinity矩阵广播旧权重
             for sender_id in tqdm(self.client_dic, desc="broadcast again"):
                 sender = self.client_dic[sender_id]
-                # 计算affinity矩阵
                 affinity_matrix = sender.cache_keeper.affinity_matrix
-                # 根据affinity矩阵直接广播
                 if self.args.broadcaster_strategy == "affinity_cluster":
                     self.broadcaster.affinity_cluster(sender_id, sender.model, affinity_matrix)
                 elif self.args.broadcaster_strategy == "affinity_topK":
-                    self.broadcaster.affinity_topK(sender_id, sender.model)
+                    self.broadcaster.affinity_topK(sender_id, sender.model, affinity_matrix)
                 else:
                     self.broadcaster.affinity_baseline(sender_id, sender.model, affinity_matrix)
 
@@ -143,11 +142,17 @@ class Trainer(object):
 
     def update_broadcast_weight(self):
         for sender_id in tqdm(self.client_dic, desc="update broadcast weight"):
+            self.client_dic[sender_id].cache_keeper.update_local_eval() # broadcast前更新了本地模型，更新local_eval
             self.client_dic[sender_id].cache_keeper.update_broadcast_weight()
 
     def update_update_weight(self):
-        for sender_id in tqdm(self.client_dic, desc="update update weight"):
-            self.client_dic[sender_id].cache_keeper.update_update_weight()
+        for c_id in tqdm(self.client_dic, desc="update update weight"):
+            self.client_dic[c_id].cache_keeper.update_raw_eval_list() # 接受到了新模型，更新eval
+            self.client_dic[c_id].cache_keeper.update_update_weight()
+
+    def update_affinity_map(self):
+        for c_id in tqdm(self.client_dic, desc="update affinty:"):
+            self.client_dic[c_id].cache_keeper.update_affinity_map()
 
     # 选择topk
     def select_topK(self):
@@ -223,6 +228,7 @@ class Trainer(object):
 
     # 权重插值
     def weighted_interpolation_update(self):
+        # todo 记得改
         for c_id in tqdm(self.client_dic, desc="weighted_interpolation"):
             if self.strategy == "weighted_model_interpolation":
                 self.client_dic[c_id].weighted_model_interpolation_update()
@@ -237,7 +243,7 @@ class Trainer(object):
 
     # todo cache_received -> update_received_memory 已经做了
     def cache_model(self):
-        for c_id in self.client_dic:
+        for c_id in tqdm(self.client_dic, desc="cache_last_local"):
             self.client_dic[c_id].cache_keeper.cache_last_local()
 
     def cache_received(self):
@@ -319,27 +325,18 @@ class Trainer(object):
         self.clear_cache()
 
     # 权重模型插值
-    # def weighted_model_interpolation(self):
-    #     self.cache_model()
-    #     self.local()
-    #     self.broadcast()
-    #
-    #     self.cache_received()
-    #     self.update_weight()
-    #     self.weighted_interpolation_update()
-    #     self.clear_received()
-
-
-
     def weighted_model_interpolation(self):
+        self.cache_model() # 记录local train之前的model
         self.local()
         if self.recorder.rounds > 0:
             self.update_broadcast_weight()
+            self.update_affinity_map()
         self.broadcast()
         self.cache_received()
         self.update_update_weight()
         self.weighted_interpolation_update()
         self.clear_received()
+
 
 
     # Pens
