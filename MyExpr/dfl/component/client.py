@@ -121,7 +121,7 @@ class Client(object):
         return total_loss, total_correct
 
     ##############
-    # epoch-wise #
+    #  an epoch  #
     ##############
     def local_train(self):
         self.model.train()
@@ -216,45 +216,6 @@ class Client(object):
                 temp = x_neighbor.data.mul(topo_weight)
                 x_paras.data.add_(temp)
 
-    # todo 改bug
-    def weighted_model_interpolation_update(self):
-        local_factor = 0.5
-        for x_paras in self.model.parameters():
-            x_paras.data.mul_(local_factor)
-
-        flag = False
-        temp_paras = None
-        total_weight = 0
-        for neighbor_id in self.received_model_dict.keys():
-            neighbor_model = self.received_model_dict[neighbor_id]
-            neighbor_weight = self.cache_keeper.mutual_update_weight[neighbor_id]
-            if neighbor_weight > 0:
-                flag = True
-            total_weight += neighbor_weight
-        if temp_paras is not None:
-            temp_paras.data.div_(total_weight)
-            x_paras.data.add_(temp_paras)
-
-        if not flag:
-            for x_paras in self.model.parameters():
-                x_paras.data.mul_(1 / local_factor)
-
-    # todo 临时
-    def weighted_model_interpolation_update2(self):
-        local_weight = self.cache_keeper.mutual_update_weight2[self.client_id]
-        total_weight = local_weight
-        for x_paras in self.model.parameters():
-            x_paras.data.mul_(local_weight)
-
-        for neighbor_id in self.received_model_dict.keys():
-            neighbor_model = self.received_model_dict[neighbor_id]
-            neighbor_weight = self.cache_keeper.mutual_update_weight2[neighbor_id]
-            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
-                temp = x_neighbor.data.mul(neighbor_weight)
-                x_paras.data.add_(temp)
-            total_weight += neighbor_weight
-        x_paras.data.div_(total_weight)
-
     def weighted_model_interpolation_update3(self):
         local_weight = self.cache_keeper.mutual_update_weight3[self.client_id]
         total_weight = local_weight
@@ -270,132 +231,17 @@ class Client(object):
             total_weight += neighbor_weight
         x_paras.data.div_(total_weight)
 
-    def weighted_model_interpolation_update4(self):
-        local_weight = self.cache_keeper.mutual_update_weight4[self.client_id]
-        total_weight = local_weight
-        for x_paras in self.model.parameters():
-            x_paras.data.mul_(local_weight)
-
-        for neighbor_id in self.received_model_dict.keys():
-            neighbor_model = self.received_model_dict[neighbor_id]
-            neighbor_weight = self.cache_keeper.mutual_update_weight4[neighbor_id]
-            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
-                temp = x_neighbor.data.mul(neighbor_weight)
-                x_paras.data.add_(temp)
-            total_weight += neighbor_weight
-        x_paras.data.div_(total_weight)
-
-    def weighted_model_interpolation_update5(self):
-        model_backup = copy.deepcopy(self.model)
-        local_weight = self.cache_keeper.mutual_update_weight5[self.client_id]
-        total_weight = local_weight
-        for x_paras in self.model.parameters():
-            x_paras.data.mul_(local_weight)
-
-        for neighbor_id in self.received_model_dict.keys():
-            neighbor_model = self.received_model_dict[neighbor_id]
-            neighbor_weight = self.cache_keeper.mutual_update_weight5[neighbor_id]
-            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
-                temp = x_neighbor.data.mul(neighbor_weight)
-                x_paras.data.add_(temp)
-            total_weight += neighbor_weight
-        if total_weight == 0.:
-            # self.model.load_state_dict(self.cache_keeper.last_local_model.cpu().state_dict())
-            self.model.load_state_dict(model_backup.cpu().state_dict())
-        else:
-            x_paras.data.div_(total_weight)
-
     def select_topK(self):
         topK = self.topK_selector.select(self)
         if topK is None:
             return
         # self.topK = topK
-        selected_weight_dict = {}
+        self.topK_neighbor = {}
         # todo 改这里
         for c_id, loss in topK:
-            selected_weight_dict[c_id] = self.received_model_dict[c_id]
-        # self.received_model_dict = selected_weight_dict
-        self.topK_neighbor = selected_weight_dict
-
+            self.topK_neighbor[c_id] = self.received_model_dict[c_id]
         # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
 
-    # todo 改
-    # def update_broadcast_weight(self, balanced=False, model_dif_adjust=True):
-    #     new_w_dict = cal_delta_loss(self, self.recorder.args)
-    #
-    #     new_broadcast_w_list = []
-    #     new_update_w_list = []
-    #
-    #     epsilon = 1e-9
-    #     for i in range(self.args.client_num_in_total):
-    #         # relu
-    #         if i in new_w_dict and new_w_dict[i] > 0:
-    #             new_update_w_list.append(copy.deepcopy(new_w_dict[i]))
-    #         else:
-    #             new_update_w_list.append(0)
-    #
-    #     norm_factor = max(np.sum(new_update_w_list), epsilon)
-    #     new_update_w_list = np.array(new_update_w_list) / norm_factor
-    #
-    #     for i in range(self.args.client_num_in_total):
-    #         if i in new_w_dict:
-    #             new_broadcast_w_list.append(copy.deepcopy(new_w_dict[i]))
-    #         else:
-    #             # print(f"{self.client_id} 缺少 {i}")
-    #             new_broadcast_w_list.append(0)
-    #
-    #     new_broadcast_w_list = np.array(new_broadcast_w_list)
-    #
-    #     if model_dif_adjust:
-    #         dif_list = [0 for _ in range(self.args.client_num_in_total)]
-    #         dif_dict = cal_model_dif(self, self.args, norm_type="l2_root")
-    #         for c_id, dif in dif_dict.items():
-    #             dif_list[c_id] = dif_dict[c_id]
-    #         dif_list = np.array(dif_list)
-    #         dif_list[self.client_id] = np.min(dif_list)
-    #         dif_list = (dif_list - np.min(dif_list)) / (np.max(dif_list) - np.min(dif_list)) # norm
-    #         dif_list = (1 - dif_list)
-    #
-    #         new_broadcast_w_list *= dif_list
-    #         new_update_w_list *= dif_list
-    #
-    #     if balanced:
-    #         new_broadcast_w_list /= len(self.validation_set)
-    #
-    #     # 试下
-    #     # new_broadcast_w_list = (new_broadcast_w_list - np.min(new_broadcast_w_list)) / (np.max(new_broadcast_w_list) - np.min(new_broadcast_w_list))
-    #
-    #     # # norm 1
-    #     # normalization_factor = np.abs(np.sum(new_broadcast_w_list))
-    #     #
-    #     # if normalization_factor < 1e-9:
-    #     #     print('Normalization factor is really small')
-    #     #     normalization_factor += 1e-9
-    #     # new_broadcast_w_list = np.array(new_broadcast_w_list) / normalization_factor
-    #
-    #     norm_factor = np.sum(new_update_w_list)
-    #     norm_factor = max(norm_factor, epsilon)
-    #     new_update_w_list = np.array(new_update_w_list) / norm_factor
-    #
-    #     print(f"client {self.client_id} new_update_w_list : {new_update_w_list}")
-    #     print(f"client {self.client_id} new_broadcast_w_list : {new_broadcast_w_list}")
-    #
-    #     # 更新权重
-    #     self.update_w = new_update_w_list
-    #     self.broadcast_w = new_broadcast_w_list
-    #
-    # def update_p(self, self_max=True):
-    #     self.p[self.client_id] += self.broadcast_w
-    #     for neighbor_id in self.received_w_dict:
-    #         self.p[neighbor_id] += self.received_w_dict[neighbor_id]
-    #
-    #     # 固定自身权重为最高
-    #     if self_max:
-    #         for c_id in range(len(self.p)):
-    #             self.p[c_id][c_id] = np.min(self.p)
-    #         for c_id in range(len(self.p)):
-    #             self.p[c_id][c_id] = np.max(self.p)
-    #         # print(f"client {self.client_id} p max {np.max(self.p)}")
 
     # 广播模块
     def broadcast(self):

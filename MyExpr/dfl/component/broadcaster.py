@@ -42,7 +42,7 @@ class Broadcaster(object):
         self.receive = self.receive_from_neighbors
 
     def flood(self, sender_id, model):
-        client_dic = self.recorder.client_dic
+        client_dic = self.recorder.client_dict
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for receiver_id in client_dic.keys():
             if topology[receiver_id] != 0 and receiver_id != sender_id:
@@ -50,7 +50,7 @@ class Broadcaster(object):
                 self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
 
     def random(self, sender_id, model):
-        client_dic = self.recorder.client_dic
+        client_dic = self.recorder.client_dict
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         if self.args.broadcast_K == -1:
             K = self.args.num_clients_per_dist
@@ -76,7 +76,7 @@ class Broadcaster(object):
         # 第一轮全发，避免后续出现差错
 
         # 根据上一轮接收到的neighbor模型，更新affinity矩阵，对矩阵聚类，并转发自身模型以及affinity权重到对应聚类上
-        client_dic = self.recorder.client_dic
+        client_dic = self.recorder.client_dict
         sender = client_dic[sender_id]
 
         # 取出所有邻居
@@ -130,7 +130,7 @@ class Broadcaster(object):
         # 屏蔽自身消息
         if receiver_id == sender_id:
             return
-        receiver = self.recorder.client_dic[receiver_id]
+        receiver = self.recorder.client_dict[receiver_id]
         # 调用receiver的方法，显示收到了某个client的数据。。（相当于钩子函数）
         receiver.response(sender_id)
         if model is not None:
