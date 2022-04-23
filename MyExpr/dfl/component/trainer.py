@@ -61,7 +61,7 @@ class Trainer(object):
     def register_recorder(self, recorder):
         self.recorder = recorder
         self.client_dic = recorder.client_dic
-        # todo 把这个初始化要改掉
+        # 如果是中心化算法，初始化server
         if self.strategy == "fedavg":
             self.central_server.client_dic = self.client_dic
 
@@ -106,15 +106,15 @@ class Trainer(object):
                 # broadcast前更新了本地模型，更新local_eval
                 self.client_dic[sender_id].cache_keeper.update_local_eval()
                 self.client_dic[sender_id].cache_keeper.update_broadcast_weight()
+                self.client_dic[sender_id].cache_keeper.update_p()
             else:
-                # 第一轮还没收到模型，raw_eval_loss为空，无法更新broadcast_weight
+                # 第一轮还没收到模型，raw_eval_loss为空，无法更新broadcast_weight，更没法更新p。
                 self.client_dic[sender_id].cache_keeper.update_local_eval()
-            self.client_dic[sender_id].cache_keeper.update_p()
 
     def update_update_weight(self):
         for c_id in tqdm(self.client_dic, desc="update update weight"):
             self.client_dic[c_id].cache_keeper.update_raw_eval_list() # 接受到了新模型，更新eval
-            self.client_dic[c_id].cache_keeper.update_update_weight()
+            self.client_dic[c_id].cache_keeper.update_update_weight(model_dif_adjust=True)
 
     # 选择topk
     def select_topK(self):

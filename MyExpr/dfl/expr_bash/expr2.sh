@@ -5,13 +5,13 @@
 #- dataset：cifar10
 
 # ours01 # log/expr2/c60_wmi3_latent2_nd2_th0.1_pe100
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
 150 0.5 2 0.1 100 "expr2"
 # ours03 # log/expr2/c60_wmi3_latent2_nd2_th0.3_pe100
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
 150 0.5 2 0.3 100 "expr2"
 # ours05 # log/expr2/c60_wmi3_latent2_nd2_th0.5_pe100
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
 150 0.5 2 0.5 100 "expr2"
 # local # log/expr2/c60_local_latent2_nd2_pe100
 bash run_expr.sh "TFConvNet" "cuda:2" "local" "affinity_topK" 1 60 0.1 "non-iid_latent2" \

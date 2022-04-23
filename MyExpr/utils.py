@@ -206,15 +206,14 @@ def calc_emd_heatmap(train_data, train_idx_dict, args):
             train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
             emd = compute_emd(train_data_from, train_data_to)
             emd_list[c_id_from][c_id_to] = emd
-    # todo 这样写整个热力图色调偏冷，而权重热力图偏热，可能在下面那个循环改成倒数会好些
     emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)
     return emd_list
 
 
 # 根据二维矩阵生成热力图
-def generate_heatmap(matrix, path):
+def generate_heatmap(matrix, path, vmin=0, vmax=1):
     # 显示数值 square=True, annot=True
-    plt.matshow(matrix, cmap=plt.cm.rainbow, vmin=np.min(matrix), vmax=np.max(matrix))
+    plt.matshow(matrix, cmap=plt.cm.rainbow, vmin=vmin, vmax=vmax)
     plt.colorbar()
     # plt.show()
     # sns.heatmap(matrix, vmin=0, vmax=1, center=0.5)

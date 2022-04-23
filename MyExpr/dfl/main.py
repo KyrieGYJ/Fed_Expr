@@ -34,6 +34,7 @@ from MyExpr.utils import calc_emd_heatmap
 
 
 def initialize(args):
+    print(f"使用设备:{args.device}")
     # 初始化数据
     data = Data(args)
     data.generate_loader()
@@ -78,14 +79,15 @@ def main():
         os.makedirs(f'./heatmap/{project_name}/{name}')
     generate_heatmap(emd_list, f"./heatmap/{project_name}/{name}/emd_heatmap")
 
-    args.turn_on_wandb = name is not None and project_name is not None and False
+    args.turn_on_wandb = name is not None and project_name is not None and True
 
     if args.pretrain_epoch > 0:
         model_dict_fname = f"./precomputed/pretrain/{args.model}_c{args.client_num_in_total}" \
                            f"_{args.data_distribution}_dn{args.num_distributions}_pe{args.pretrain_epoch}"
         model_dict = {i: None for i in range(args.client_num_in_total)}
         try:
-            model_dict = torch.load(model_dict_fname)
+            # 这里不加CPU会把它加载到原先训练的GPU上。
+            model_dict = torch.load(model_dict_fname, map_location='cpu')
             print(f'> model dictionary {model_dict_fname} exists, no need to compute')
         except Exception as e:
             print(e)
@@ -93,6 +95,7 @@ def main():
             return
         for i in client_dict:
             client_dict[i].model.load_state_dict(model_dict[i])
+
 
     if args.turn_on_wandb:
         wandb.init(project=project_name,
@@ -112,13 +115,6 @@ def main():
         trainer.train()
         # 在本地数据集上测试
         trainer.local_test()
-        # 在全局数据集上测试
-        # trainer.overall_test()
-        # 所属的distribution测试数据上测试
-        # if "non-iid" in args.data_distribution:
-        #     trainer.non_iid_test()
-        # 打印affinity热力图（如果采用聚类广播算法）
-        # broadcaster.get_w_heatmap(f"./heatmap/{project_name}/{name}/weight_{rounds}")
         # 打印通信频率热力图
         broadcaster.get_freq_heatmap(f"./heatmap/{project_name}/{name}/freq_{rounds}")
         end = time.time()

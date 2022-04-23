@@ -1,8 +1,9 @@
 import torch
-import numpy as np
 import heapq
 import math
 
+
+# 根据特定指标选择topK
 class TopKSelector(object):
 
     def __init__(self, args):
@@ -50,8 +51,6 @@ class TopKSelector(object):
 
     def no_top_k(self, host):
         pass
-
-    # todo 改f1筛选法
 
     def top_k_by_f1_marco(self, train_X, train_Y, host):
         heap = []

@@ -18,8 +18,6 @@ class Client(object):
         validation_loader = data.validation_loader[client_id]
         test_loader = data.test_loader[client_id]
 
-        # todo 可能得改，model一直占GPU不利于大模型训练
-        model = model.to(args.device)
         optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
         # optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd)
         # optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd, amsgrad=True)
@@ -68,7 +66,7 @@ class Client(object):
         self.received_model_dict = {}
         self.received_topology_weight_dict = {}
         # broadcast weight from neighbor
-        self.received_w_dict = {} # todo 暂时忽略，后续再加入对称
+        self.received_w_dict = {}
 
         self.topK_neighbor = None
 

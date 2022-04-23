@@ -15,16 +15,9 @@ class Broadcaster(object):
         self.recorder = None
         self.strategy = None
 
-        # todo 删掉
-        # affinity metrics策略用用到
-        self.p = None
-        self.w = None
-
         # 抽象方法
         self.send = None
-
         self.use(args.broadcaster_strategy)
-
         # 记录客户之间的通信频率
         self.broadcast_freq = None
 
@@ -32,32 +25,6 @@ class Broadcaster(object):
         self.recorder = recorder
 
     def initialize(self):
-        if self.strategy == "affinity":
-            # 初始化权重矩阵，不连通的边用-1填充
-            client_dic = self.recorder.client_dic
-            other_weight = 0.
-            client_initial_self_weight = 0.1
-            # self.p = [[torch.tensor(1. * other_weight) for _ in client_dic] for _ in client_dic]
-            # self.w = [[torch.tensor(1. * other_weight) for _ in client_dic] for _ in client_dic]
-            self.p = np.ones([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64) * other_weight
-            self.w = np.ones([self.args.client_num_in_total], dtype=np.float64) * other_weight
-            for c_id in client_dic:
-                topology = self.recorder.topology_manager.get_symmetric_neighbor_list(c_id)
-                for neighbor_id in client_dic:
-                    # 不相邻的client不存在权重
-                    # if topology[neighbor_id] == 0:
-                    #     self.p[c_id][neighbor_id] = torch.tensor(0.)
-                    #     self.w[c_id][neighbor_id] = torch.tensor(0.)
-                    # elif neighbor_id == c_id:
-                    #     self.p[c_id][neighbor_id] = torch.tensor(1. * client_initial_self_weight)
-                    #     self.w[c_id][neighbor_id] = torch.tensor(1. * client_initial_self_weight)
-                    if topology[neighbor_id] == 0:
-                        self.p[c_id][neighbor_id] = 0.
-                        self.w[neighbor_id] = 0.
-                    elif neighbor_id == c_id:
-                        self.p[c_id][neighbor_id] = 1. * client_initial_self_weight
-                        self.w[neighbor_id] = 1. * client_initial_self_weight
-
         # 通信频率矩阵
         self.broadcast_freq = np.zeros([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64)
 
@@ -68,15 +35,12 @@ class Broadcaster(object):
             self.send = self.flood
         elif strategy == "affinity_topK":
             self.send = self.affinity_topK
-        elif strategy == "affinity_baseline":
-            self.send = self.affinity_baseline
         elif strategy == "random":
             self.send = self.random
 
         self.strategy = strategy
         self.receive = self.receive_from_neighbors
 
-    # todo 后续可能要利用上topology_weight（类似dfl论文里的参考pagerank）
     def flood(self, sender_id, model):
         client_dic = self.recorder.client_dic
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
@@ -104,11 +68,9 @@ class Broadcaster(object):
         for receiver_id in client_indexes:
             self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
 
-
     #######################################
     #         variants of affinity        #
     #######################################
-
     # 取topK
     def affinity_topK(self, sender_id, model, affinity_matrix=None):
         # 第一轮全发，避免后续出现差错
@@ -133,56 +95,20 @@ class Broadcaster(object):
             K = self.args.num_clients_per_dist
         else:
             K = int(self.args.broadcast_K * self.args.client_num_in_total)
+
         # print(f"广播{K}个，num_clients_per_dist:{self.args.num_clients_per_dist}, total:{self.args.client_num_in_total}")
         random.shuffle(candidate)
-        topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.broadcast_weight[x])
+        topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.p[x])
 
         # 转发
         # print(f"client {sender_id} are prone to be in the same distributions with {topK}")
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for receiver_id in topK:
             # print(f"发送给client {receiver.client_id}")
-            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.cache_keeper.p[receiver_id])
+            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id],
+                                        client_dic[sender_id].cache_keeper.broadcast_weight)
         # self_freq每次都加一，确保其全局最高 (不能这样做，这样会到导致中心太大，周围其他全部淡化)
         # self.broadcast_freq[sender_id][sender_id] += 1
-
-    def affinity_baseline(self, sender_id, model, affinity_matrix=None):
-        # 根据真实的分布情况进行广播
-        pass
-        # args = self.args
-        #
-        # # 第一轮全发，避免后续出现差错
-        # if affinity_matrix is None and self.recorder.rounds == 0:
-        #     self.flood(sender_id, model)
-        #     return
-        #
-        # # 根据真实聚类计算w，更新p矩阵和affinity矩阵，
-        # client_dic = self.recorder.client_dic
-        # sender = client_dic[sender_id]
-        #
-        # if affinity_matrix is None:
-        #     # sender.update_broadcast_weight()
-        #     # sender.update_p()
-        #     sender.cache_keeper.update()
-        #     # 根据p生成affinity矩阵
-        #     affinity_matrix = get_adjacency_matrix(sender)
-        #
-        # sender.affinity_matrix = affinity_matrix
-        #
-        # # 获取真实聚类
-        # dist_client_dict = self.recorder.data.dist_client_dict
-        # client_dist_dict = self.recorder.data.client_dist_dict
-        # sender_dist_id = client_dist_dict[sender_id]
-        # sender_dist = dist_client_dict[sender_dist_id]
-        #
-        # # 转发
-        # topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
-        # print(f"client {sender_id} are in the same distribution of clients: {sender_dist}")
-        # for receiver_id in sender_dist:
-        #     if receiver_id == sender_id:
-        #         continue
-        #     self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], sender.cache_keeper.broadcast_weight)
-
 
     def get_freq_heatmap(self, path):
         if self.strategy == "flood":
