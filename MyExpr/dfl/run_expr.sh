@@ -17,7 +17,7 @@ EXPR_NAME=${14}
 
 NAME=c${N}
 # 缩短名称
-if [[ "$TRAINER_STRATEGY" =~  "weighted_model_interpolation" ]]
+if [[ "$TRAINER_STRATEGY" =~ "weighted_model_interpolation" ]]
 then
   NAME=${NAME}_wmi${TRAINER_STRATEGY:0-1}
 else

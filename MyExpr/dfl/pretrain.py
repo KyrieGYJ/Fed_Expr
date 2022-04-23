@@ -1,6 +1,7 @@
 import torch
 import os
 import sys
+import wandb
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
@@ -36,20 +37,23 @@ if args.pretrain_epoch > 0:
         client_dict, data, _, _, _ = initialize(args)
         pretrain_epoch = args.pretrain_epoch
 
+        total_loss, total_correct = 0.0, 0.0
         for i in tqdm(model_dict, desc="pretrain each client"):
             model = client_dict[i].model
             model.train()
             model.to(args.device)
-            total_loss, total_correct = 0.0, 0.0
+            client_loss, client_correct = 0.0, 0.0
             for e in tqdm(range(pretrain_epoch), desc="current client"):
                 for idx, (train_X, train_Y) in enumerate(client_dict[i].train_loader):
                     train_loss, correct = client_dict[i].train(train_X, train_Y)
-                    total_loss += train_loss
-                    total_correct += correct
+                    client_loss += train_loss
+                    client_correct += correct
                 # print("client {}: local train takes {} iteration".format(self.client_id, iteration))
-            total_loss /= pretrain_epoch
-            total_correct /= pretrain_epoch
-            print(f"client {i} train_loss: {total_loss}, train_acc: {total_correct/len(client_dict[i].train_set)}")
+            client_loss /= pretrain_epoch
+            client_correct /= pretrain_epoch
+            total_loss += client_loss
+            total_correct += client_correct
+            print(f"client {i} train_loss: {client_loss}, train_acc: {client_correct / len(client_dict[i].train_set)}")
 
         for i in range(args.client_num_in_total):
             model_dict[i] = client_dict[i].model.cpu().state_dict()
@@ -57,4 +61,6 @@ if args.pretrain_epoch > 0:
         fname = f"{args.model}_c{args.client_num_in_total}" \
                 f"_{args.data_distribution}_dn{args.num_distributions}_pe{args.pretrain_epoch}"
         torch.save(model_dict, f"./precomputed/{project_name}/{fname}")
+
+        print(f"avg_loss:{total_loss / len(model_dict)}, avg_acc:{total_correct / len(model_dict)}")
 

@@ -16,15 +16,6 @@ def generate_heatmap(matrix, path):
     plt.close()
 
 
-def get_clients_p_heatmap(self, path):
-    print("绘制p矩阵热力图")
-    for c_id in range(self.args.client_num_in_total):
-        p_list = self.recorder.client_dic[c_id].p
-        if p_list is None or p_list == []:
-            continue
-        if not os.path.exists(path):
-            os.makedirs(path)
-        generate_heatmap(p_list, f"{path}/client_{c_id}")
 
 
 def pass_heatmap(self, path):

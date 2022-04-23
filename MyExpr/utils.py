@@ -118,7 +118,7 @@ def calc_eval_speed_up_using_cache(cache_keeper):
     # new_model_dict = {host.client_id:host.model}
     new_model_dict = host.received_model_dict
 
-    # known_set = cache_keeper.known_set
+    known_set = cache_keeper.known_set
 
     for c_id, model in new_model_dict.items():
         loss_dict[c_id], acc_dict[c_id] = 0.0, 0.0
@@ -141,69 +141,14 @@ def calc_eval_speed_up_using_cache(cache_keeper):
 
     # 用memory填充未接收到的部分
     for i in range(args.client_num_in_total):
-        if i not in new_model_dict:
+        if i not in new_model_dict and i in known_set:
             loss_dict[i] = cache_keeper.raw_eval_loss_list[i]
             acc_dict[i] = cache_keeper.raw_eval_acc_list[i]
-        # if i not in new_model_dict and i in known_set:
-        #     loss_dict[i] = cache_keeper.raw_eval_loss_list[i]
-        #     acc_dict[i] = cache_keeper.raw_eval_acc_list[i]
 
     # correct转acc
     for c_id, correct in acc_dict.items():
         acc_dict[c_id] = correct / len(host.validation_set)
     return loss_dict, acc_dict
-
-
-# 计算模型之间的权重(参考ICLR FedFomo) 废弃方法
-def calc_delta_loss(client, received_model_dict, args, loss_only = True):
-    """
-    计算本地模型与其他模型的权重
-    ：local_para  本地模型参数
-    : parameters 其他模型参数集合
-    : return  权重列表
-    """
-    # 因为在local_update后broadcast，采用本轮local_update后的模型和上一轮接收到的模型进行计算
-    # 相当于基于接受者上一轮的模型预测：接受者的本地模型在本地经历过mutual_update和新一轮local_update后，发送者的新本地模型和它的仍然是相近的。
-    w_dict = {}
-    criterion = client.criterion_CE
-    val_dataloader = client.validation_loader
-    local_model = client.model
-    # received_dic = client.last_received_model_dict
-    # received_dict = client.received_model_dict
-
-    epsilon = 1e-6
-    total_local_loss = 0.0
-    loss_dict = {}
-    for c_id, model in received_model_dict.items():
-        loss_dict[c_id] = 0.0
-
-    with torch.no_grad():
-        local_model.eval()
-        for data, label in val_dataloader:
-            data, label = data.to(args.device), label.to(args.device)
-            local_outputs = local_model(data)
-            local_loss = criterion(local_outputs, label)
-
-            if "cuda" in args.device:
-                local_loss = local_loss.cpu()
-
-            total_local_loss += local_loss.item()
-
-            for c_id, model in received_model_dict.items():
-                model.eval()
-                received_outputs = model(data)
-                received_loss = criterion(received_outputs, label)
-
-                if "cuda" in args.device:
-                    received_loss = received_loss.cpu()
-
-                loss_dict[c_id] += received_loss.item()
-
-    for c_id, model in received_model_dict.items():
-        # 计算分母
-        w_dict[c_id] = total_local_loss - loss_dict[c_id]
-
-    return w_dict
 
 
 # 搬运FedFomo，功能与CalDif相同
@@ -241,72 +186,6 @@ def compute_parameter_difference(model_a, model_b, norm='l2'):
     # np.sum(np.power(model_a.parameters().detach().cpu().numpy() -
     #                 model_a.parameters().detach().cpu().numpy(), 2))
     return total_diff  # Returns distance^2 between two model parameters
-
-
-# def get_adjacency_matrix_decrapted(client, symmetric=True, shift_positive=False,
-#                          normalize=True, rbf_kernel=False, rbf_delta=1.):
-#     """
-#     If learning federations through updated client weight preferences,
-#     first compute adjacency matrix given client-to-client weights
-#     Args:
-#     - clients (Clients[]): list of clients <-- should be the population.clients array
-#     - symmetric (bool): return a symmetric matrix
-#     - shift_positive (bool): shift all values to be >= 0 (add (0 - lowest value) to everything)
-#     - normalize (bool): after other transformations, normalize everything to range [0, 1]
-#     - rbf_kernel (bool): apply Gaussian (RBF) kernel to the matrix
-#     """
-#     # 不能用softmax， 太低了
-#     softmax_client_weights = False
-#     p = copy.deepcopy(client.p)
-#     matrix = np.array(p)
-#     # print(matrix)
-#     if softmax_client_weights:
-#         matrix = np.exp(matrix) / np.sum(np.exp(matrix))
-#     else:
-#         matrix = 1. - matrix  # Affinity matrix is reversed -> lower value = better # 谜之公式
-#         if rbf_kernel:
-#             # print(-1. * matrix ** 2 / (2. * rbf_delta ** 2))
-#             # print(type(-1. * matrix ** 2 / (2. * rbf_delta ** 2)))
-#             matrix = np.exp(-1. * matrix ** 2 / (2. * rbf_delta ** 2)) # 谜之公式
-#     if symmetric:
-#         matrix = (matrix + matrix.T) * 0.5
-#     if shift_positive:
-#         if np.min(matrix) < 0:
-#             matrix = matrix + (0 - np.min(matrix))
-#     if normalize:
-#         # print("normalize")
-#         # 也不能用normalize，会出现infs or NaNs
-#         matrix = matrix / (np.max(matrix) - np.min(matrix))
-#     return matrix
-
-
-def get_adjacency_matrix(client, softmax_client_weights=False, symmetric=True, shift_positive=False,
-                         normalize=True, rbf_kernel=False, rbf_delta=1.):
-    p = copy.deepcopy(client.p)
-    matrix = np.array(p)
-    # 不能用因为矩阵总的exp和比较大，相除后每一项会特别小
-    if softmax_client_weights:
-        matrix = np.exp(matrix) / np.sum(np.exp(matrix))
-        # print(f"softmax matrix{matrix}")
-    if symmetric:
-        matrix = (matrix + matrix.T) * 0.5
-    # 开启后矩阵中的值会非常高，整个图偏红
-    if shift_positive:
-        if np.min(matrix) < 0:
-            matrix = matrix + (0 - np.min(matrix))
-        # print(f"shift positive matrix{matrix}"
-
-    # 调整自身权重为最大
-    for i in range(len(matrix)):
-        matrix[i][i] = np.min(matrix)
-    for i in range(len(matrix)):
-        matrix[i][i] = np.max(matrix)
-
-    if normalize:
-        # matrix = matrix - np.min(matrix) / (np.max(matrix) - np.min(matrix))
-        matrix = (matrix - np.min(matrix)) / (np.max(matrix) - np.min(matrix))
-
-    return matrix
 
 
 def calc_emd_heatmap(train_data, train_idx_dict, args):

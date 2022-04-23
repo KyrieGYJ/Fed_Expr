@@ -61,7 +61,6 @@ class Client(object):
         self.recorder = recorder
         self.broadcaster = broadcaster
         self.cache_keeper = keeper(self)
-        self.cache_keeper.initialize()
 
         ########################################
         # cache of current communication round #
@@ -69,7 +68,7 @@ class Client(object):
         self.received_model_dict = {}
         self.received_topology_weight_dict = {}
         # broadcast weight from neighbor
-        self.received_w_dict = {}
+        self.received_w_dict = {} # todo 暂时忽略，后续再加入对称
 
         self.topK_neighbor = None
 

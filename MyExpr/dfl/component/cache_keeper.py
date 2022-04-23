@@ -15,18 +15,17 @@ class keeper(object):
         self.logger = logger(self, "cache_keeper")
         self.log_condition = self.host.client_id == 0
 
-
         # 接收缓存
         self.topology_weight_memory = {}
-        self.broadcast_weight_memory = {}
+        # self.broadcast_weight_memory = {}
         # 权重缓存（用于计算通信权重，对于本轮没收到的模型复用历史记录）
 
         # 权重模块
         self.raw_eval_loss_list = np.zeros((self.args.client_num_in_total,))
         self.raw_eval_acc_list = np.zeros((self.args.client_num_in_total,))
-        self.delta_loss_list = []
         self.dif_list = []
         self.broadcast_weight = np.zeros((self.args.client_num_in_total,))
+        self.p = np.zeros((self.args.client_num_in_total,))
 
         # todo 删除多余逻辑
         self.mutual_update_weight = []  # 采用delta_loss计算
@@ -41,21 +40,12 @@ class keeper(object):
         # local_train前的模型缓存
         self.last_local_model = copy.deepcopy(self.host.model.cpu())
         self.last_local_loss = 0.0
-
-        self.p = None # 原始权重矩阵
-        self.affinity_matrix = None # 调整后的权重矩阵（p和affinity应该是等价的才行）
         self.known_set = set()
-
-        # self.update_uw = None
-
-    def initialize(self):
-        self.p = np.zeros([self.args.client_num_in_total, self.args.client_num_in_total],
-                         dtype=np.float64)
-        self.update_affinity_matrix()
-
+        self.known_set.add(self.host.client_id)
 
     # 使用local_train前的本地模型作为基准模型 theta_i(t-1) - theta_n(t)
     def update_model_dif(self, norm=True):
+        moniter = True
         base_model = self.last_local_model
         dif_list = np.zeros((self.args.client_num_in_total,))
 
@@ -65,61 +55,107 @@ class keeper(object):
                 dif_list[self.host.client_id] = compute_parameter_difference(base_model, self.host.model, norm="l2")
             elif i in self.host.received_model_dict:
                 dif_list[i] = compute_parameter_difference(base_model, self.host.received_model_dict[i], norm="l2")
-            # 原未考虑历史值也会缺省
-            else:
+            elif i in self.known_set:
                 dif_list[i] = self.dif_list[i]
-            # elif i in self.known_set:
-            #     dif_list[i] = self.dif_list[i]
-            # else:
-            #     # model_difference的历史缺省值不需要特殊处理，因为它必然大于等于0，几乎不可能等于零
-            #     continue
+            else:
+                # model_difference的历史缺省值不需要特殊处理，因为它必然大于等于0，几乎不可能等于零
+                continue
 
-        # 处理 unknown，默认没收到的模型是最差的。
-        # for i in range(self.args.client_num_in_total):
-        #     if i not in self.known_set:
-        #         dif_list[i] = np.max(dif_list)
+        self.logger.log_with_name(
+            f"[id:{self.host.client_id}]: model_dif[before handle unknown]: {dif_list}",
+            self.log_condition & moniter)
+
+        # 处理unknown。
+        for i in range(self.args.client_num_in_total):
+            if i not in self.known_set:
+                # 默认没收到的模型是最差的，这样做会导致一开始没收到的就再也收不到了。
+                dif_list[i] = self.dif_list[i]
+                # 第一轮赋最差值
+                # if self.recorder.rounds == 0:
+                #     dif_list[i] = np.max(dif_list)
+                # else:
+                #     # 后续复用第一轮，这样或许在别的模型下降的时候有机会探索到。
+                #     dif_list[i] = self.dif_list[i] # 第一轮的model_dif还是太大了
+                    # 后续用下界更新历史，下界更差则不更新
+                    # if np.max(dif_list) < self.dif_list[i]:
+                    #     dif_list[i] = np.max(dif_list)
+                    # else:
+                    #     dif_list[i] = self.dif_list[i]
+
+        self.logger.log_with_name(
+            f"[id:{self.host.client_id}]: model_dif[after handle unknown]: {dif_list}",
+            self.log_condition & moniter)
 
         # 防止0项干扰norm计算(0被认为是缺省值)
         if np.min(dif_list) == 0.:
             dif_list = np.where(dif_list <= 0., np.partition(dif_list, 1)[1], dif_list)
         if norm:
             dif_list = (dif_list - np.min(dif_list)) / (np.max(dif_list) - np.min(dif_list) + self.epsilon)
-        if len(self.delta_loss_list) != self.args.client_num_in_total:
+        if len(dif_list) != self.args.client_num_in_total:
             print(f"cache_keeper: model dif length error, "
                   f"found {len(dif_list)}, expected {self.args.client_num_in_total}")
+
+        self.logger.log_with_name(
+            f"[id:{self.host.client_id}]: model_dif: {dif_list}",
+            self.log_condition & moniter)
 
         self.dif_list = dif_list
 
     # 更新received_dict包含的，其他则复用历史
     def update_raw_eval_list(self):
+        moniter = True
         # 更新已知client集合
-        # for i in self.host.received_model_dict:
-        #     self.known_set.add(i)
+        for i in self.host.received_model_dict:
+            self.known_set.add(i)
 
         # 更新raw_loss，缺省值复用历史，历史缺省值默认设置为最大loss
         raw_eval_loss_dict, raw_eval_acc_dict = calc_eval_speed_up_using_cache(self)
-        self.delta_loss_list = np.zeros((self.args.client_num_in_total,))
-        self.raw_eval_loss_list = np.zeros((self.args.client_num_in_total,))
-        self.raw_eval_acc_list = np.zeros((self.args.client_num_in_total,))
+
+        raw_eval_loss_list = np.zeros((self.args.client_num_in_total,))
+        raw_eval_acc_list = np.zeros((self.args.client_num_in_total,))
 
         for i in range(self.args.client_num_in_total):
-            self.raw_eval_loss_list[i] = raw_eval_loss_dict[i]
-            self.raw_eval_acc_list[i] = raw_eval_acc_dict[i]
+            if i in raw_eval_loss_dict:
+                raw_eval_loss_list[i] = raw_eval_loss_dict[i]
+                raw_eval_acc_list[i] = raw_eval_acc_dict[i]
+            else:
+                # 处理历史缺省值，防止默认值影响后续特殊处理
+                raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
+                raw_eval_acc_list[i] = np.max(raw_eval_acc_list)
 
-        # for i in range(self.args.client_num_in_total):
-        #     if i in raw_eval_loss_dict:
-        #         self.raw_eval_loss_list[i] = raw_eval_loss_dict[i]
-        #         self.raw_eval_acc_list[i] = raw_eval_acc_dict[i]
-        #     else:
-        #         # 处理历史缺省值，防止默认值影响后续特殊处理
-        #         self.raw_eval_loss_list[i] = np.max(self.raw_eval_loss_list)
-        #         self.raw_eval_acc_list[i] = np.max(self.raw_eval_acc_list)
+        self.logger.log_with_name(f"[id:{self.host.client_id}]: raw_eval_loss[before handle unknown] {raw_eval_loss_list}",
+                                  self.log_condition & moniter)
 
-        # 历史缺省值，需要特殊处理，直接赋值最大的loss(默认为效果最差)
+        # 历史缺省值，需要特殊处理
         for i in range(self.args.client_num_in_total):
             if i not in self.known_set:
+                # 默认没收到的模型是最差的(直接赋值最大的loss和最小acc(默认为效果最差))，这样做会导致一开始没收到的就再也收不到了。
                 self.raw_eval_loss_list[i] = np.max(self.raw_eval_loss_list)
-                self.raw_eval_acc_list[i] = np.max(self.raw_eval_acc_list)
+                self.raw_eval_acc_list[i] = np.min(self.raw_eval_acc_list)
+
+                # 第一轮赋最差值，后续复用第一轮，这样或许在别的模型下降的时候有机会探索到。
+                # if self.recorder.rounds == 0:
+                #     raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
+                #     raw_eval_acc_list[i] = np.min(raw_eval_acc_list)
+                # else:
+                #     # 第一轮的最差值还是太大了
+                #     raw_eval_loss_list[i] = self.raw_eval_loss_list[i]
+                #     raw_eval_acc_list[i] = self.raw_eval_acc_list[i]
+                    # if np.max(raw_eval_loss_list) < self.raw_eval_loss_list[i]:
+                    #     raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
+                    # else:
+                    #     raw_eval_loss_list[i] = self.raw_eval_loss_list[i]
+                    # if np.min(raw_eval_acc_list) > self.raw_eval_acc_list[i]:
+                    #     raw_eval_acc_list[i] = np.min(raw_eval_acc_list)
+                    # else:
+                    #     raw_eval_acc_list[i] = self.raw_eval_acc_list[i]
+
+        self.raw_eval_loss_list = raw_eval_loss_list
+        self.raw_eval_acc_list = raw_eval_acc_list
+
+        self.logger.log_with_name(
+            f"[id:{self.host.client_id}]: raw_eval_loss[after handle unknown] {raw_eval_loss_list}",
+            self.log_condition & moniter)
 
         # check
         if len(self.raw_eval_loss_list) != self.args.client_num_in_total:
@@ -153,11 +189,19 @@ class keeper(object):
         self.logger.log_with_name(f"[id:{self.host.client_id}]: balanced_broadcast_w_list:{new_broadcast_w_list}",
                                   self.log_condition)
 
+    def update_p(self):
+        # 该策略后续仍然无法解决初始化造成的失联问题
+        self.p += self.broadcast_weight
+        # 添加指数遗忘
+        # r = 0.5
+        # self.p = r * self.p + (1 - r) * self.broadcast_weight
+
     def update_update_weight(self, model_dif_adjust=True):
         moniter = False
         base_loss = self.last_local_loss
 
         new_update_w_list = base_loss - self.raw_eval_loss_list
+        # 不考虑负效果模型(本身除外)
         new_update_w_list = np.where(new_update_w_list >= 0, new_update_w_list, 0)
 
         self.logger.log_with_name(f"[id:{self.host.client_id}]: base_loss:{base_loss} \n"
@@ -189,52 +233,17 @@ class keeper(object):
         self.logger.log_with_name(f"[id:{self.host.client_id}]: update_w_list[threshold]:{new_update_w_list}",
                                   self.log_condition)
 
-    # todo 整合成一个方法
-    def update_affinity_map(self):
-        self.update_p()
-        self.update_affinity_matrix()
-
-    def update_p(self, self_max=True):
-        self.p[self.host.client_id] += self.broadcast_weight
-
-        # todo 个人权重矩阵应该要取消掉
-        for neighbor_id in self.broadcast_weight_memory:
-            self.p[neighbor_id] += self.broadcast_weight_memory[neighbor_id]
-
-        # 固定自身权重为最高
-        if self_max:
-            row, col = np.diag_indices_from(self.p)
-            self.p[row, col] = np.min(self.p)
-            self.p[row, col] = np.max(self.p)
-
-    def update_affinity_matrix(self, symmetric=True, self_max=True, normalize=True):
-        matrix = np.array(copy.deepcopy(self.p))
-        if symmetric:
-            matrix = (matrix + matrix.T) * 0.5
-
-        if self_max:
-            row, col = np.diag_indices_from(matrix)
-            matrix[row, col] = np.min(matrix)
-            matrix[row, col] = np.max(matrix)
-
-        if normalize:
-            matrix = (matrix - np.min(matrix)) / (np.max(matrix) - np.min(matrix) + self.epsilon)
-
-        self.affinity_matrix = matrix
-        # print(f"cache keeper: client {self.host.client_id} affinity_matrix {self.affinity_matrix}")
-        return matrix
-
     def update_received_memory(self):
+        self.logger.log_with_name(f"[id:{self.host.client_id}]: received_list:{self.host.received_model_dict.keys()}",
+                                  self.log_condition)
         for c_id in self.host.received_model_dict:
             self.topology_weight_memory[c_id] = self.host.received_topology_weight_dict[c_id]
-            self.broadcast_weight_memory[c_id] = self.host.received_w_dict[c_id]
-            # todo 历史缺省值不好处理，所以可能就不看client的权重矩阵了，只保存向量，然后主要看通信频率图
-
+            # self.broadcast_weight_memory[c_id] = self.host.received_w_dict[c_id]
 
     def cache_last_local(self):
         self.last_local_model = copy.deepcopy(self.host.model.cpu())
         # 针对广播第一轮，尚未计算eval的情况
-        if self.host.client_id >= len(self.raw_eval_loss_list):
+        if self.recorder.rounds == 0:
             self.last_local_loss, _ = eval(self.host.model, self.host, self.args)
         else:
             self.last_local_loss = self.raw_eval_loss_list[self.host.client_id]
