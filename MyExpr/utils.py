@@ -197,7 +197,7 @@ def calc_emd_heatmap(train_data, train_idx_dict, args):
     Returns:
         反应数据集之间相似度的热力图矩阵
     """
-    client_num_in_total = args.client_num_in_total
+    client_num_in_total = args.client_num_in_total - args.malignant_num
     emd_list = np.zeros([client_num_in_total, client_num_in_total], dtype=np.float64)
     epsilon = 1e-10
     for c_id_from in range(client_num_in_total):

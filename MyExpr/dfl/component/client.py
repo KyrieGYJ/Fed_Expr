@@ -6,6 +6,7 @@ from opacus import PrivacyEngine
 
 
 from .cache_keeper import keeper
+from .logger import logger
 
 
 class Client(object):
@@ -13,10 +14,13 @@ class Client(object):
         self.args = args
         self.client_id = client_id
         self.data = data
+        self.log_condition = client_id == 0
+        self.logger = logger(self, "client")
 
-        train_loader = data.train_loader[client_id]
-        validation_loader = data.validation_loader[client_id]
-        test_loader = data.test_loader[client_id]
+        total_benign_num = args.client_num_in_total - args.malignant_num
+        train_loader = data.train_loader[client_id] if client_id < total_benign_num else None
+        validation_loader = data.validation_loader[client_id] if client_id < total_benign_num else None
+        test_loader = data.test_loader[client_id] if client_id < total_benign_num else None
 
         optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
         # optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd)
@@ -41,9 +45,9 @@ class Client(object):
         self.validation_loader = validation_loader
         self.test_loader = test_loader
 
-        self.train_set = data.train_set[client_id]
-        self.test_set = data.test_set[client_id]
-        self.validation_set = data.validation_set[client_id]
+        self.train_set = data.train_set[client_id] if client_id < total_benign_num else None
+        self.test_set = data.test_set[client_id] if client_id < total_benign_num else None
+        self.validation_set = data.validation_set[client_id] if client_id < total_benign_num else None
 
         self.optimizer = optimizer
 
@@ -69,12 +73,6 @@ class Client(object):
         self.received_w_dict = {}
 
         self.topK_neighbor = None
-
-        # self broadcast weight
-        self.p = []
-        # self.broadcast_w = []
-        # self.update_w = []
-        self.affinity_matrix = []
 
     ################
     # an iteration #
@@ -222,6 +220,8 @@ class Client(object):
         for x_paras in self.model.parameters():
             x_paras.data.mul_(local_weight)
 
+        # self.logger.log_with_name(f"received: {self.received_model_dict.keys()}", self.log_condition)
+
         for neighbor_id in self.received_model_dict.keys():
             neighbor_model = self.received_model_dict[neighbor_id]
             neighbor_weight = self.cache_keeper.mutual_update_weight3[neighbor_id]
@@ -241,7 +241,6 @@ class Client(object):
         for c_id, loss in topK:
             self.topK_neighbor[c_id] = self.received_model_dict[c_id]
         # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
-
 
     # 广播模块
     def broadcast(self):

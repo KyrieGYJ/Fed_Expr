@@ -16,6 +16,7 @@ class Trainer(object):
         self.args = args
         self.recorder = None
         self.client_dict = None
+        self.malignant_dict = None
 
         self.data = None
         self.test_loader = None
@@ -86,8 +87,10 @@ class Trainer(object):
 
     # 广播
     def broadcast(self):
-        for c_id in tqdm(self.client_dict, desc="broadcast"):
+        for c_id in tqdm(self.client_dict, desc="benign broadcast"):
             self.client_dict[c_id].broadcast()
+        for c_id in tqdm(self.malignant_dict, desc="malignant broadcast"):
+            self.malignant_dict[c_id].broadcast()
 
     def update_broadcast_weight(self):
         for sender_id in tqdm(self.client_dict, desc="update broadcast weight"):
@@ -179,7 +182,6 @@ class Trainer(object):
 
     # 权重插值
     def weighted_interpolation_update(self):
-        # todo 记得改
         for c_id in tqdm(self.client_dict, desc="weighted_interpolation"):
             if self.strategy == "weighted_model_interpolation3":
                 self.client_dict[c_id].weighted_model_interpolation_update3()
@@ -248,14 +250,13 @@ class Trainer(object):
             client.model_interpolation_update()
 
         # clear_received，这里只清空本轮记录
-        self.clear_cache()
+        # self.clear_cache()
 
     # 权重模型插值
     def weighted_model_interpolation(self):
         self.cache_model() # 记录local train之前的model
         self.local()
         self.update_broadcast_weight()
-        # todo 需要对称性的话，要在这里与received_weight相加取平均。
         self.broadcast()
         self.cache_received()
         self.update_update_weight()
@@ -327,6 +328,8 @@ class Trainer(object):
 
         self.clear_cache()
 
+    # pens
+
     ############
     # 中心化方法 #
     ############
@@ -337,6 +340,12 @@ class Trainer(object):
         # fedavg
         server = self.central_server
         server.aggregate()
+
+    # FedProx
+
+    # pFedMe
+
+
 
     ###########
     # 测试方法 #

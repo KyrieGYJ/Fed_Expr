@@ -34,7 +34,9 @@ from MyExpr.utils import calc_emd_heatmap
 
 
 def initialize(args):
+    malignant_num = 20
     print(f"使用设备:{args.device}")
+    print(f"恶意节点数量:{malignant_num}")
     # 初始化数据
     data = Data(args)
     data.generate_loader()
@@ -42,8 +44,13 @@ def initialize(args):
     trainer = Trainer(args)
     broadcaster = Broadcaster(args)
     topK_selector = TopKSelector(args)
+
     client_num_in_total = args.client_num_in_total
-    topology_manager = TopologyManager(client_num_in_total, True,
+    args.malignant_num = malignant_num
+    args.client_num_in_total = client_num_in_total + malignant_num
+
+    # todo 下一版删掉，本实验不考虑
+    topology_manager = TopologyManager(client_num_in_total + malignant_num, True,
                                        undirected_neighbor_num=args.topology_neighbors_num_undirected)
     topology_manager.generate_topology()
 
@@ -57,6 +64,14 @@ def initialize(args):
     for c_id in tqdm(range(client_num_in_total), desc='setting up client'):
         c = Client(model_builder(num_classes=10), c_id, args, data, topK_selector, recorder, broadcaster)
         client_dict[c_id] = c
+
+    # 添加恶意节点 todo 恶意节点可能利用意外接受到的模型。
+    malignant_dict = {}
+    for c_id in tqdm(range(malignant_num)):
+        c = Client(model_builder(num_classes=10), c_id + client_num_in_total, args, data, topK_selector, recorder, broadcaster)
+        malignant_dict[c_id + client_num_in_total] = c
+    trainer.malignant_dict = malignant_dict
+    recorder.malignant_dict = malignant_dict
 
     broadcaster.initialize()
     return client_dict, data, trainer, recorder, broadcaster
@@ -79,10 +94,10 @@ def main():
         os.makedirs(f'./heatmap/{project_name}/{name}')
     generate_heatmap(emd_list, f"./heatmap/{project_name}/{name}/emd_heatmap")
 
-    args.turn_on_wandb = name is not None and project_name is not None and True
+    args.turn_on_wandb = name is not None and project_name is not None and False
 
     if args.pretrain_epoch > 0:
-        model_dict_fname = f"./precomputed/pretrain/{args.model}_c{args.client_num_in_total}" \
+        model_dict_fname = f"./precomputed/pretrain/{args.model}_c{args.client_num_in_total - args.malignant_num}" \
                            f"_{args.data_distribution}_dn{args.num_distributions}_pe{args.pretrain_epoch}"
         model_dict = {i: None for i in range(args.client_num_in_total)}
         try:

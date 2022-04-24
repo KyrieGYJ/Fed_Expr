@@ -4,6 +4,8 @@
 #- distribution= latent non-iid(distribution_num={2, 3, 4, 5, 10})
 #- dataset：cifar10
 
+# 这里150轮可能不太够，开到300试试
+# -------------------- distribution_num = 2 ---------------------
 # ours01 # log/expr2/c60_wmi3_latent2_nd2_th0.1_pe100
 bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
 150 0.5 2 0.1 100 "expr2"

@@ -28,11 +28,11 @@ class keeper(object):
         self.p = np.zeros((self.args.client_num_in_total,))
 
         # todo 删除多余逻辑
-        self.mutual_update_weight = []  # 采用delta_loss计算
-        self.mutual_update_weight2 = []  # 采用raw_loss计算
+        # self.mutual_update_weight = []  # 采用delta_loss计算
+        # self.mutual_update_weight2 = []  # 采用raw_loss计算
         self.mutual_update_weight3 = []  # 采用delta_loss计算，但是加入自因子
-        self.mutual_update_weight4 = []  # 采用raw_acc计算
-        self.mutual_update_weight5 = []  # 采用local_model prior to its current state
+        # self.mutual_update_weight4 = []  # 采用raw_acc计算
+        # self.mutual_update_weight5 = []  # 采用local_model prior to its current state
 
         self.sigma = 0.1  # 防止model_dif最大的delta loss丢失
         self.epsilon = 1e-9
@@ -42,6 +42,7 @@ class keeper(object):
         self.last_local_loss = 0.0
         self.known_set = set()
         self.known_set.add(self.host.client_id)
+        self.try_set = set()
 
     # 对于model_dif和eval_Loss，第一轮没收到的client默认赋予平均值，后续则复用这个平均值。
     # 当前没有收到的则复用历史记录，第一轮没有收到的则赋予均值
@@ -70,6 +71,8 @@ class keeper(object):
             self.log_condition & moniter)
 
         avg_dif = avg_dif / len(self.known_set)
+
+        # todo 优先探索unknown，探索过后没有回应就不再发起探索。
         # 处理unknown。
         for i in range(self.args.client_num_in_total):
             if i not in self.known_set:
@@ -77,8 +80,11 @@ class keeper(object):
                 if self.recorder.rounds == 0:
                     dif_list[i] = avg_dif
                 else:
-                    # 后续复用第一轮，这样或许在别的模型下降的时候有机会探索到。
+                    # 第一轮的值还是太好了
+                    # # 后续复用第一轮，这样或许在别的模型下降的时候有机会探索到。
                     dif_list[i] = self.dif_list[i] # 第一轮的model_dif还是太大了
+                    # 后续给最差值
+                    # dif_list[i] = np.max(dif_list)
 
         self.logger.log_with_name(
             f"[id:{self.host.client_id}]: model_dif[after handle unknown]: {dif_list}",
@@ -119,6 +125,10 @@ class keeper(object):
                 raw_eval_acc_list[i] = raw_eval_acc_dict[i]
                 known_loss += raw_eval_loss_list[i]
                 known_acc += raw_eval_acc_list[i]
+            else:
+                # 防止影响后续最值运算
+                raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
+                raw_eval_acc_list[i] = np.max(raw_eval_acc_list)
         self.logger.log_with_name(f"[id:{self.host.client_id}]: raw_eval_loss[before handle unknown] {raw_eval_loss_list}",
                                   self.log_condition & moniter)
 
@@ -133,9 +143,12 @@ class keeper(object):
                     raw_eval_loss_list[i] = avg_known_loss
                     raw_eval_acc_list[i] = avg_known_acc
                 else:
-                    # 后续直接复用上一轮的结果
+                    # 后续直接复用上一轮的结果 （第一轮的结果还是太理想了）
                     raw_eval_loss_list[i] = self.raw_eval_loss_list[i]
                     raw_eval_acc_list[i] = self.raw_eval_acc_list[i]
+                    # 后续给最差值
+                    # raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
+                    # raw_eval_acc_list[i] = np.min(raw_eval_acc_list)
 
         self.raw_eval_loss_list = raw_eval_loss_list
         self.raw_eval_acc_list = raw_eval_acc_list
@@ -150,8 +163,9 @@ class keeper(object):
                                       f", found {len(self.raw_eval_loss_list)}"
                                       f", expected {self.args.client_num_in_total}", True)
 
-        self.logger.log_with_name(f"[id:{self.host.client_id}]: raw_eval_loss {self.raw_eval_loss_list}",
-                                  self.log_condition)
+        self.logger.log_with_name(f"[id:{self.host.client_id}]: base_loss {self.last_local_loss}, "
+                                  f" raw_eval_loss {self.raw_eval_loss_list}",
+                                  self.log_condition & moniter)
 
     def update_local_eval(self):
         # broadcast之前本地模型进行了local_train，需要重新计算local_eval_loss，与last_local_loss区分开
@@ -164,6 +178,9 @@ class keeper(object):
     # 平衡能够消除client之间数据量差异带来的权值影响。
     def update_broadcast_weight(self, balanced=True):
         moniter = False
+        # 还是有永远无沟通的点。
+        # self.logger.log_with_name(f"[id:{self.host.client_id}]: known_set:{self.known_set}",
+        #                           self.log_condition)
         base_loss = self.last_local_loss
         # delta_loss using loss memory
         new_broadcast_w_list = base_loss - self.raw_eval_loss_list
@@ -177,15 +194,23 @@ class keeper(object):
 
         self.broadcast_weight = new_broadcast_w_list
         self.logger.log_with_name(f"[id:{self.host.client_id}]: balanced_broadcast_w_list:{new_broadcast_w_list}",
-                                  self.log_condition)
+                                  self.log_condition & moniter)
 
     # client的全局广播权重向量
     # 采用update_weight加权平均所有broadcast_weight(包括自身)
     # 加权平均相比只采用本身计算的权重的好处在于：能够避免启动带来的陌生client双方长期无法互信的问题。
     def update_p(self):
-        self.p += self.mutual_update_weight3[self.host.client_id] * self.broadcast_weight
+        # 这种方式还是会有遗漏的部分，而且很容易给恶意模型分到比较好的权重。
+        # 添加指数遗忘，防止前面初始值积累出来的差距后续难以追赶
+        r = 0.5
+        self.p = r * self.p
+        self.p += (1 - r) * self.mutual_update_weight3[self.host.client_id] * self.broadcast_weight
+
         for received_id in self.host.received_w_dict:
-            self.p += self.mutual_update_weight3[received_id] * self.host.received_w_dict[received_id]
+            self.p += (1 - r) * self.mutual_update_weight3[received_id] * self.host.received_w_dict[received_id]
+
+        self.logger.log_with_name(f"[id:{self.host.client_id}]: affinity:{self.p}",
+                                  self.log_condition)
         # 添加指数遗忘
         # r = 0.5
         # self.p = r * self.p + (1 - r) * self.broadcast_weight
@@ -228,7 +253,7 @@ class keeper(object):
                                   self.log_condition)
 
     def update_received_memory(self):
-        self.logger.log_with_name(f"[id:{self.host.client_id}]: received_list:{self.host.received_model_dict.keys()}",
+        self.logger.log_with_name(f"-update_received_memory-[id:{self.host.client_id}]: received_list:{self.host.received_model_dict.keys()}",
                                   self.log_condition)
         for c_id in self.host.received_model_dict:
             self.topology_weight_memory[c_id] = self.host.received_topology_weight_dict[c_id]

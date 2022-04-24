@@ -4,10 +4,11 @@ import wandb
 # todo 绘制client_weight曲线。
 class Recorder(object):
 
-    def __init__(self, client_dic, topology_manager, trainer, broadcaster, topK_selector, data, args):
+    def __init__(self, client_dict, topology_manager, trainer, broadcaster, topK_selector, data, args):
         # 全局变量
         print("初始化recorder...", end="")
-        self.client_dic = client_dic
+        self.client_dict = client_dict
+        self.malignant_dict = None
         self.topology_manager = topology_manager
         self.args = args
         self.data = data
@@ -49,13 +50,13 @@ class Recorder(object):
             id = 0
             for dist_id in self.data.dist_client_dict:
                 for c_id in self.data.dist_client_dict[dist_id]:
-                    client = self.client_dic[c_id]
+                    client = self.client_dict[c_id]
                     client.client_id = id
-                    new_client_dic[id] = self.client_dic[c_id]
+                    new_client_dic[id] = self.client_dict[c_id]
                     client_dist_dict[id] = dist_id
                     new_train_idx_dict[id] = train_idx_dict[c_id]
                     id += 1
-            self.client_dic = new_client_dic
+            self.client_dict = new_client_dic
             self.data.train_idx_dict = new_train_idx_dict
             print(f"总共{len(self.data.dist_client_dict)}类数据")
         # for c_id in range(client_num_in_total):

@@ -69,7 +69,7 @@ def add_args():
     parser.add_argument('--trainer_strategy', type=str, default="local_and_mutual",
                         help='[local_and_mutual, mutual, local_train, model_interpolation, pushsum]')
 
-    parser.add_argument('--num_workers', type=int, default=10)
+    parser.add_argument('--num_workers', type=int, default=4)
 
     parser.add_argument('--name', type=str, default='',
                         help='name of current mission')

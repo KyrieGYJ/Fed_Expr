@@ -4,12 +4,12 @@ import numpy as np
 import copy
 import random
 
+from MyExpr.dfl.component.logger import logger
 from MyExpr.utils import generate_heatmap
 
 class Broadcaster(object):
 
     def __init__(self, args):
-        # neighbors_weight_dict
         self.args = args
         self.receive = None
         self.recorder = None
@@ -18,14 +18,20 @@ class Broadcaster(object):
         # 抽象方法
         self.send = None
         self.use(args.broadcaster_strategy)
+
+        self.logger = logger(self, "broadcaster")
+        self.log_condition = lambda id : id == 0
+
         # 记录客户之间的通信频率
         self.broadcast_freq = None
+
 
     def register_recorder(self, recorder):
         self.recorder = recorder
 
     def initialize(self):
         # 通信频率矩阵
+        total_num = self.args.client_num_in_total + self.args.malignant_num
         self.broadcast_freq = np.zeros([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64)
 
     def use(self, strategy):
@@ -55,26 +61,38 @@ class Broadcaster(object):
         if self.args.broadcast_K == -1:
             K = self.args.num_clients_per_dist
         else:
-            K = int(self.args.broadcast_K * self.args.client_num_in_total)
+            K = int(self.args.broadcast_K * (self.args.client_num_in_total - self.args.malignant_num))
         neighbor_list = []
+        if sender_id < self.args.client_num_in_total - self.args.malignant_num:
+            for neighbor_id in range(len(topology)):
+                if topology[neighbor_id] != 0:
+                    neighbor_list.append(neighbor_id)
+        else:
+            neighbor_list = range(self.args.client_num_in_total)
 
-        for neighbor_id in range(len(topology)):
-            if topology[neighbor_id] != 0:
-                neighbor_list.append(neighbor_id)
-
-        np.random.seed(int(time.time()))  # make sure for each comparison, we are selecting the same clients each round
+        np.random.seed(int(time.time() * 1000) % 10000)  # make sure for each comparison, we are selecting the same clients each round
         client_indexes = np.random.choice(neighbor_list, K, replace=False)
 
-        for receiver_id in client_indexes:
-            self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
+        self.logger.log_with_name(f"client [{sender_id}] random send to {client_indexes.sort()}", self.log_condition(sender_id))
+
+        if sender_id < self.args.client_num_in_total - self.args.malignant_num:
+            for receiver_id in client_indexes:
+                self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
+        else:
+            malignant_tp_weight = 0.1
+            malignant_broadcast_weight = np.random.rand(self.args.client_num_in_total)
+            for receiver_id in client_indexes:
+                self.receive_from_neighbors(sender_id, model, receiver_id, malignant_tp_weight, malignant_broadcast_weight)
 
     #######################################
     #         variants of affinity        #
     #######################################
     # 取topK
     def affinity_topK(self, sender_id, model, affinity_matrix=None):
-        # 第一轮全发，避免后续出现差错
-
+        # 恶意节点随机广播
+        if sender_id >= self.args.client_num_in_total - self.args.malignant_num:
+            self.random(sender_id, model)
+            return
         # 根据上一轮接收到的neighbor模型，更新affinity矩阵，对矩阵聚类，并转发自身模型以及affinity权重到对应聚类上
         client_dic = self.recorder.client_dict
         sender = client_dic[sender_id]
@@ -82,7 +100,6 @@ class Broadcaster(object):
         # 取出所有邻居
         candidate = []
 
-        # 计算累计的affinity，如果本回合没收到，沿用上回合的
         # 这个策略可能有点粗暴，但是可以有效保证每次必然会发出固定数量，可能后续要改进
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for neighbor_id in range(self.args.client_num_in_total):
@@ -94,14 +111,21 @@ class Broadcaster(object):
         if self.args.broadcast_K == -1:
             K = self.args.num_clients_per_dist
         else:
-            K = int(self.args.broadcast_K * self.args.client_num_in_total)
+            K = int(self.args.broadcast_K * (self.args.client_num_in_total - self.args.malignant_num))
 
-        # print(f"广播{K}个，num_clients_per_dist:{self.args.num_clients_per_dist}, total:{self.args.client_num_in_total}")
         random.shuffle(candidate)
         topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.p[x])
 
+        topK.sort()
+        self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to {topK}",
+                                  self.log_condition(sender_id))
+
+        if self.args.malignant_num > 0:
+            self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to "
+                  f"{np.sum(np.where(np.array(topK) >= (self.args.client_num_in_total - self.args.malignant_num), 1, 0))} malignant",
+                  self.log_condition(sender_id))
+
         # 转发
-        # print(f"client {sender_id} are prone to be in the same distributions with {topK}")
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
         for receiver_id in topK:
             # print(f"发送给client {receiver.client_id}")
@@ -130,7 +154,10 @@ class Broadcaster(object):
         # 屏蔽自身消息
         if receiver_id == sender_id:
             return
-        receiver = self.recorder.client_dict[receiver_id]
+        if receiver_id < self.args.client_num_in_total - self.args.malignant_num:
+            receiver = self.recorder.client_dict[receiver_id]
+        else:
+            receiver = self.recorder.malignant_dict[receiver_id]
         # 调用receiver的方法，显示收到了某个client的数据。。（相当于钩子函数）
         receiver.response(sender_id)
         if model is not None:
