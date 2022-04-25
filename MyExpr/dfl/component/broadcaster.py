@@ -20,7 +20,7 @@ class Broadcaster(object):
         self.use(args.broadcaster_strategy)
 
         self.logger = logger(self, "broadcaster")
-        self.log_condition = lambda id : id == 0
+        self.log_condition = lambda id : id == 50
 
         # 记录客户之间的通信频率
         self.broadcast_freq = None
@@ -80,7 +80,7 @@ class Broadcaster(object):
                 self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
         else:
             malignant_tp_weight = 0.1
-            malignant_broadcast_weight = np.random.rand(self.args.client_num_in_total)
+            malignant_broadcast_weight = np.zeros((self.args.client_num_in_total, )) # np.random.rand(self.args.client_num_in_total)
             for receiver_id in client_indexes:
                 self.receive_from_neighbors(sender_id, model, receiver_id, malignant_tp_weight, malignant_broadcast_weight)
 
@@ -98,41 +98,88 @@ class Broadcaster(object):
         client_dic = self.recorder.client_dict
         sender = client_dic[sender_id]
 
-        # 取出所有邻居
-        candidate = []
-
-        # 这个策略可能有点粗暴，但是可以有效保证每次必然会发出固定数量，可能后续要改进
-        topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
-        for neighbor_id in range(self.args.client_num_in_total):
-            # 排除掉不存在的连接
-            if topology[neighbor_id] == 0:
-                continue
-            candidate.append(neighbor_id)
+        # ----
 
         if self.args.broadcast_K == -1:
             K = self.args.num_clients_per_dist
         else:
             K = int(self.args.broadcast_K * (self.args.client_num_in_total - self.args.malignant_num))
 
-        random.shuffle(candidate)
-        topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.p[x])
+        topK = []
+
+        # 优先发送未尝试过的节点。(能够确保所有节点都试探过)
+        if len(sender.cache_keeper.try_set) != 0:
+            # print(f"client {sender_id} haven't try all, ({len(sender.cache_keeper.try_set)} left)!")
+            # for _ in range(min(K, len(sender.cache_keeper.try_set))):
+            #     topK.append(sender.cache_keeper.try_set.pop())
+            np.random.seed(int(time.time() * 1000) % 10000)
+            try_list = np.array(list(sender.cache_keeper.try_set))
+            client_indexes = np.random.choice(try_list, min(K, len(sender.cache_keeper.try_set)), replace=False)
+            for i in client_indexes:
+                sender.cache_keeper.try_set.remove(i)
+            topK.extend(client_indexes)
+
+
+        # 根据affinity补充
+        if len(topK) < K:
+            K -= len(topK)
+            # 取出所有邻居
+            candidate = []
+
+            # 这个策略可能有点粗暴，但是可以有效保证每次必然会发出固定数量，可能后续要改进
+            topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
+            for neighbor_id in range(self.args.client_num_in_total):
+                # 排除掉不存在的连接
+                if topology[neighbor_id] == 0:
+                    continue
+                candidate.append(neighbor_id)
+
+            random.shuffle(candidate)
+            topK.extend(heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.p[x]))
+            topK = list(set(topK)) # 去重
 
         topK.sort()
-        self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to {topK}",
+        self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to {topK}"
+                                  f"{np.sum(np.where(np.array(topK) >= (self.args.client_num_in_total - self.args.malignant_num), 1, 0))} malignant",
                                   self.log_condition(sender_id))
 
+        # -----
 
-        # 如果仍有未尝试过探索的节点（try_set记录未发送过的）
-        if len(sender.cache_keeper.try_set) < self.args.client_num_in_total:
-            print(
-                f"client [{sender_id}] haven't tried all! {self.args.client_num_in_total - len(sender.cache_keeper.try_set)}")
-            for i in topK:
-                sender.cache_keeper.try_set.add(i)
+        # # 取出所有邻居
+        # candidate = []
+        #
+        # # 这个策略可能有点粗暴，但是可以有效保证每次必然会发出固定数量，可能后续要改进
+        # topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)
+        # for neighbor_id in range(self.args.client_num_in_total):
+        #     # 排除掉不存在的连接
+        #     if topology[neighbor_id] == 0:
+        #         continue
+        #     candidate.append(neighbor_id)
+        #
+        # if self.args.broadcast_K == -1:
+        #     K = self.args.num_clients_per_dist
+        # else:
+        #     K = int(self.args.broadcast_K * (self.args.client_num_in_total - self.args.malignant_num))
+        #
+        # random.shuffle(candidate)
+        # topK = heapq.nlargest(K, candidate, lambda x: sender.cache_keeper.p[x])
+        #
+        # topK.sort()
+        # self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to {topK}",
+        #                           self.log_condition(sender_id))
 
-        if self.args.malignant_num > 0:
-            self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to "
-                  f"{np.sum(np.where(np.array(topK) >= (self.args.client_num_in_total - self.args.malignant_num), 1, 0))} malignant",
-                  self.log_condition(sender_id))
+
+        # # 如果仍有未尝试过探索的节点（try_set记录未发送过的）
+        # if len(sender.cache_keeper.try_set) < self.args.client_num_in_total:
+        #     print(
+        #         f"client [{sender_id}] haven't tried all, ({self.args.client_num_in_total - len(sender.cache_keeper.try_set)} left!)")
+        #     for i in topK:
+        #         sender.cache_keeper.try_set.add(i)
+
+        # if self.args.malignant_num > 0:
+        #     self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to "
+        #           f"{np.sum(np.where(np.array(topK) >= (self.args.client_num_in_total - self.args.malignant_num), 1, 0))} malignant",
+        #           self.log_condition(sender_id))
 
         # 转发
         topology = self.recorder.topology_manager.get_symmetric_neighbor_list(sender_id)

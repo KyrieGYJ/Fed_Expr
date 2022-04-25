@@ -185,6 +185,8 @@ class Trainer(object):
         for c_id in tqdm(self.client_dict, desc="weighted_interpolation"):
             if self.strategy == "weighted_model_interpolation3":
                 self.client_dict[c_id].weighted_model_interpolation_update3()
+        for c_id in tqdm(self.client_dict, desc="update_parameters"):
+            self.client_dict[c_id].model.load_state_dict(self.client_dict[c_id].state_dict)
 
     # 缓存本地模型，以和下一轮local_train后的模型做区分
     def cache_model(self):

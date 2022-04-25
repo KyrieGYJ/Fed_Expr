@@ -217,19 +217,38 @@ class Client(object):
     def weighted_model_interpolation_update3(self):
         local_weight = self.cache_keeper.mutual_update_weight3[self.client_id]
         total_weight = local_weight
-        for x_paras in self.model.parameters():
-            x_paras.data.mul_(local_weight)
 
-        # self.logger.log_with_name(f"received: {self.received_model_dict.keys()}", self.log_condition)
+        # todo 应该记录model param的副本，最后再一块更新上去
+        # print(self.model.state_dict())
+        self.state_dict = copy.deepcopy(self.model.state_dict())
+
+        for key in self.state_dict:
+            # print(type(self.state_dict[key]))
+            self.state_dict[key].mul_(local_weight)
 
         for neighbor_id in self.received_model_dict.keys():
             neighbor_model = self.received_model_dict[neighbor_id]
             neighbor_weight = self.cache_keeper.mutual_update_weight3[neighbor_id]
-            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
-                temp = x_neighbor.data.mul(neighbor_weight)
-                x_paras.data.add_(temp)
+            for key1, key2 in zip(self.state_dict, neighbor_model.state_dict()):
+                temp = neighbor_model.state_dict()[key2].data.mul(neighbor_weight)
+                self.state_dict[key1].add_(temp)
             total_weight += neighbor_weight
-        x_paras.data.div_(total_weight)
+
+        # for x_paras in self.model.parameters():
+        #     x_paras.data.mul_(local_weight)
+        #
+        # # self.logger.log_with_name(f"received: {self.received_model_dict.keys()}", self.log_condition)
+        #
+        # for neighbor_id in self.received_model_dict.keys():
+        #     neighbor_model = self.received_model_dict[neighbor_id]
+        #     neighbor_weight = self.cache_keeper.mutual_update_weight3[neighbor_id]
+        #     for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
+        #         temp = x_neighbor.data.mul(neighbor_weight)
+        #         x_paras.data.add_(temp)
+        #     total_weight += neighbor_weight
+
+        # for x_paras in self.model.parameters():
+        #     x_paras.data.div_(total_weight)
 
     def select_topK(self):
         topK = self.topK_selector.select(self)

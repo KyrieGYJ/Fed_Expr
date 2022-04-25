@@ -110,13 +110,12 @@ def main():
         for i in client_dict:
             client_dict[i].model.load_state_dict(model_dict[i])
 
-
+    os.environ["WANDB_MODE"] = "offline"
     if args.turn_on_wandb:
         wandb.init(project=project_name,
                    entity="kyriegyj",
                    name=name,
                    config=args)
-
 
 
     ###############################
@@ -149,7 +148,7 @@ def main():
 
     if args.turn_on_wandb:
         wandb.finish()
-    print(time.time() - total_start)
+    print(f"总耗时: {(time.time() - total_start) / 60} min")
 
 
 if __name__ == '__main__':

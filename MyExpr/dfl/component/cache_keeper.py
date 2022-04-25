@@ -13,7 +13,7 @@ class keeper(object):
         self.recorder = host.recorder
         self.args = self.recorder.args
         self.logger = logger(self, "cache_keeper")
-        self.log_condition = self.host.client_id == 0
+        self.log_condition = self.host.client_id == 35
 
         # 接收缓存
         self.topology_weight_memory = {}
@@ -42,9 +42,14 @@ class keeper(object):
         self.last_local_loss = 0.0
         self.known_set = set()
         self.known_set.add(self.host.client_id)
-        # 需要尝试的目标，即从未接收到过的 以及 从未向其发送过的
+
+        # 需要尝试的目标，即从未向其发送过的目标 如果考虑新加入的client需要修改
         self.try_set = set()
-        self.try_set.add(self.host.client_id)
+        for i in range(self.args.client_num_in_total):
+            self.try_set.add(i)
+        self.try_set.remove(self.host.client_id)
+
+        # self.try_set.add(self.host.client_id)
 
     # 对于model_dif和eval_Loss，第一轮没收到的client默认赋予平均值，后续则复用这个平均值。
     # 当前没有收到的则复用历史记录，第一轮没有收到的则赋予均值
@@ -77,28 +82,31 @@ class keeper(object):
 
         avg_dif = avg_dif / len(self.known_set)
 
-        # 处理unknown。
-        # todo 优先探索unknown，探索过后没有回应就不再发起探索。
         for i in range(self.args.client_num_in_total):
             if i not in self.known_set:
-                if i not in self.try_set:
-                    dif_list[i] = np.min(dif_list)
-                else:
-                    # 取平均还是容易被攻击
-                    dif_list[i] = avg_dif
-                    # 试试取最差
-                    # dif_list[i] = np.max(dif_list)
-        # # 第一轮赋平均值，后续复用第一轮历史
+                # 取平均还是容易攻击
+                # dif_list[i] = avg_dif
+                # todo 就应该给最差值，后续选到了有遗忘机制，能够拟补前面的差距
+                dif_list[i] = np.max(dif_list)
+
+        # # 历史缺省值，需要特殊处理。优先探索try_set，发送过但没有回应的就赋予平均值。
+        # for i in range(self.args.client_num_in_total):
+        #     if i not in self.try_set:
+        #         dif_list[i] = np.min(dif_list)
+        #     elif i in self.try_set and i not in self.known_set:
+        #         # 取平均还是容易攻击
+        #         dif_list[i] = avg_dif
+
+        # # 处理unknown。
+        # # todo 优先探索unknown，探索过后没有回应就不再发起探索。
         # for i in range(self.args.client_num_in_total):
         #     if i not in self.known_set:
-        #         # 第一轮赋平均值
-        #         if self.recorder.rounds == 0:
-        #             dif_list[i] = avg_dif
+        #         if i not in self.try_set:
+        #             dif_list[i] = np.min(dif_list)
         #         else:
-        #             # 第一轮的值还是太好了
-        #             # # 后续复用第一轮，这样或许在别的模型下降的时候有机会探索到。
-        #             dif_list[i] = self.dif_list[i] # 第一轮的model_dif还是太大了
-        #             # 后续给最差值
+        #             # 取平均还是容易被攻击
+        #             dif_list[i] = avg_dif
+        #             # 试试取最差
         #             # dif_list[i] = np.max(dif_list)
 
         self.logger.log_with_name(
@@ -123,13 +131,22 @@ class keeper(object):
     # 更新received_dict包含的，其他则复用历史
     def update_raw_eval_list(self):
         moniter = False
-        # 更新已知client集合
+
+        # 更新已知client集合，known_set记录接收到过的。 顺便检查
         if len(self.known_set) < self.args.client_num_in_total:
+            unknown_malignant = set()
+            for i in range(self.args.client_num_in_total - self.args.malignant_num, self.args.client_num_in_total):
+                if i not in self.known_set:
+                    unknown_malignant.add(i)
+
+            # print(f"client {self.host.client_id} haven't knwon all,"
+            #       f" ({self.args.client_num_in_total - len(self.known_set)} left, including {len(unknown_malignant)} malignant)!")
+
             for i in self.host.received_model_dict:
                 self.known_set.add(i)
-                self.try_set.add(i)
+                # self.try_set.add(i)
 
-        # 更新raw_loss，缺省值复用历史，历史缺省值默认设置为最大loss
+        # 更新raw_loss，缺省值复用历史
         raw_eval_loss_dict, raw_eval_acc_dict = calc_eval_speed_up_using_cache(self)
 
         raw_eval_loss_list = np.zeros((self.args.client_num_in_total,))
@@ -151,33 +168,42 @@ class keeper(object):
 
         avg_known_loss, avg_known_acc = known_loss / len(raw_eval_loss_dict), known_acc / len(raw_eval_acc_dict)
 
-        # todo try_set和known_set的逻辑分开，try_set记录未发送过的，known_set记录未接受过的。
-        # 历史缺省值，需要特殊处理
-        # todo 优先探索unknown，探索过后没有回应就不再发起探索。
+        # 初始轮先发送未发送过的，初步试探后再开始正式训练。
         for i in range(self.args.client_num_in_total):
             if i not in self.known_set:
-                if i not in self.try_set:
-                    raw_eval_loss_list[i] = np.min(raw_eval_loss_list)
-                    raw_eval_acc_list[i] = np.max(raw_eval_acc_list)
-                else:
-                    # 取平均还是容易攻击
-                    raw_eval_loss_list[i] = avg_known_loss
-                    raw_eval_acc_list[i] = avg_known_acc
-                    # 试试取最差
-                    # raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
-                    # raw_eval_acc_list[i] = np.min(raw_eval_acc_list)
+                # 取平均还是容易攻击
+                # raw_eval_loss_list[i] = avg_known_loss
+                # raw_eval_acc_list[i] = avg_known_acc
+                # todo 给最差
+                raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
+                raw_eval_acc_list[i] = np.min(raw_eval_acc_list)
 
+
+        # 历史缺省值，需要特殊处理。优先探索try_set，发送过但没有回应的就赋予平均值。
+        # 这样有个问题：如果收到了没有尝试发送过的模型，这里会把它当前回合的eval_loss替换成最优，
+        # 如果后续再也没有收到了，它的eval_loss就永远是最优。
+        # 这是可能发生的，比如当前发送过去的模型在对方的数据集上评估结果很差，对方就不会再发过来
+        # for i in range(self.args.client_num_in_total):
+        #     if i not in self.try_set:
+        #         raw_eval_loss_list[i] = np.min(raw_eval_loss_list)
+        #         raw_eval_acc_list[i] = np.max(raw_eval_acc_list)
+        #     elif i in self.try_set and i not in self.known_set:
+        #         # 取平均还是容易攻击
+        #         raw_eval_loss_list[i] = avg_known_loss
+        #         raw_eval_acc_list[i] = avg_known_acc
+
+        # # 历史缺省值，需要特殊处理
+        # # 优先探索unknown，探索过后没有回应就不再发起探索。
         # for i in range(self.args.client_num_in_total):
         #     if i not in self.known_set:
-        #         # 第一轮赋平均值
-        #         if self.recorder.rounds == 0:
+        #         if i not in self.try_set:
+        #             raw_eval_loss_list[i] = np.min(raw_eval_loss_list)
+        #             raw_eval_acc_list[i] = np.max(raw_eval_acc_list)
+        #         else:
+        #             # 取平均还是容易攻击
         #             raw_eval_loss_list[i] = avg_known_loss
         #             raw_eval_acc_list[i] = avg_known_acc
-        #         else:
-        #             # 后续直接复用上一轮的结果 （第一轮的结果还是太理想了）
-        #             raw_eval_loss_list[i] = self.raw_eval_loss_list[i]
-        #             raw_eval_acc_list[i] = self.raw_eval_acc_list[i]
-        #             # 后续给最差值
+        #             # 试试取最差
         #             # raw_eval_loss_list[i] = np.max(raw_eval_loss_list)
         #             # raw_eval_acc_list[i] = np.min(raw_eval_acc_list)
 
@@ -208,10 +234,8 @@ class keeper(object):
     # 利用当前的 delta_loss 除以 len(validation_dataset) 做平衡
     # 平衡能够消除client之间数据量差异带来的权值影响。
     def update_broadcast_weight(self, balanced=True):
-        moniter = False
-        # 还是有永远无沟通的点。
-        # self.logger.log_with_name(f"[id:{self.host.client_id}]: len_known_set:{len(self.known_set)}",
-        #                           self.log_condition)
+        moniter = True
+
         base_loss = self.last_local_loss
         # delta_loss using loss memory
         new_broadcast_w_list = base_loss - self.raw_eval_loss_list
@@ -233,27 +257,26 @@ class keeper(object):
     def update_p(self):
         # 这种方式还是会有遗漏的部分，而且很容易给恶意模型分到比较好的权重。
         # 添加指数遗忘，防止前面初始值积累出来的差距后续难以追赶
-        r = 0.5
+        r = 0.3
         self.p = r * self.p
-        aggregated_received_broadcast_weight = (1 - r) * self.mutual_update_weight3[self.host.client_id] * self.broadcast_weight
-        # self.p += (1 - r) * self.mutual_update_weight3[self.host.client_id] * self.broadcast_weight
+
+        # 生成P之前对weight进行归一化，确保每回合影响权重的能力是相同的。 (减去min确保大于等于0)
+        aggregated_received_broadcast_weight = (1 - r) * self.mutual_update_weight3[self.host.client_id] \
+                                               * ((self.broadcast_weight - np.min(self.broadcast_weight))
+                                                  / (np.sum((self.broadcast_weight - np.min(self.broadcast_weight)))
+                                                     + self.epsilon))
 
         for received_id in self.host.received_w_dict:
-            aggregated_received_broadcast_weight += (1 - r) * self.mutual_update_weight3[received_id] * self.host.received_w_dict[received_id]
+            aggregated_received_broadcast_weight += (1 - r) * self.mutual_update_weight3[received_id] * \
+                                                    ((self.host.received_w_dict[received_id] - np.min(
+                                                        self.host.received_w_dict[received_id]))
+                                                     / (np.sum((self.host.received_w_dict[received_id] - np.min(
+                                                                self.host.received_w_dict[received_id]))
+                                                               + self.epsilon)))
 
         self.p += (1 - r) * aggregated_received_broadcast_weight
-
-        # # todo 尝试用聚合权重代替
-        # if self.mutual_update_weight3[self.host.client_id] != 1.:
-        #     for i in range(self.args.client_num_in_total):
-        #         if i not in self.known_set:
-        #             self.broadcast_weight[i] = aggregated_received_broadcast_weight[i]
-
         self.logger.log_with_name(f"[id:{self.host.client_id}]: affinity:{self.p}",
                                   self.log_condition)
-        # 添加指数遗忘
-        # r = 0.5
-        # self.p = r * self.p + (1 - r) * self.broadcast_weight
 
     def update_update_weight(self, model_dif_adjust=True):
         moniter = False
