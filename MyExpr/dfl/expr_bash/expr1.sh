@@ -55,13 +55,19 @@ bash run.sh 0.01 "TFConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation3" "l
 # no pretrain
 # log/expr1/c20_local_pathl_nd2
 bash run_expr.sh "TFConvNet" "cuda:2" "local" "affinity_topK" 1 20 0.1 "non-iid_pathological" \
-150 0.5 2 0.1 0 "expr1"
+150 0.5 2 0.1 0 0 "expr1"
 # log/expr1/c100_local_pathl_nd2
 bash run_expr.sh "TFConvNet" "cuda:2" "local" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
-150 0.5 2 0.1 0 "expr1"
+150 0.5 2 0.1 0 0 "expr1"
 # log/expr1/c20_wmi3_pathl_nd2_th0.1
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 20 0.1 "non-iid_pathological" \
-150 0.2 2 0.1 0 "expr1"
-# log/expr1/c20_wmi3_pathl_nd2_th0.1
+150 0.2 2 0.1 0 0 "expr1"
+# log/expr1/c100_wmi3_pathl_nd2_th0.1
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
-150 0.2 2 0.1 0 "expr1"
+150 0.2 2 0.1 0 0 "expr1"
+
+# with malignant node
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+150 0.5 2 0.1 0 20 "expr1"
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+150 0.5 2 0.1 0 0 "expr1"

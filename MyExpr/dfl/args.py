@@ -38,6 +38,9 @@ def add_args():
     parser.add_argument('--client_num_in_total', type=int, default=10, metavar='NN',
                         help='number of workers in a distributed cluster')
 
+    parser.add_argument('--malignant_num', type=int, default=0, metavar='NN',
+                        help='number of malignant workers in a distributed cluster')
+
     parser.add_argument('--num_clients_per_dist', type=int, default=20,
                         help="the number of client of each distribution in latent non-iid manner")
 
@@ -69,7 +72,7 @@ def add_args():
     parser.add_argument('--trainer_strategy', type=str, default="local_and_mutual",
                         help='[local_and_mutual, mutual, local_train, model_interpolation, pushsum]')
 
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=2)
 
     parser.add_argument('--name', type=str, default='',
                         help='name of current mission')

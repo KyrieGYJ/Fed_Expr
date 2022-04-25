@@ -49,8 +49,20 @@ nohup bash run.sh 0.01 "TFConvNet" 1 64 60 "cuda:3" "weighted_model_interpolatio
 
 # todo 整理log，heatmap目录结构，按expr划分
 
+# 300 rounds
+# log/expr2/c60_wmi3_latent2_nd2_bk0.5_th0.1_pe100_mn20
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+300 0.5 2 0.1 100 20 "expr2"
+# log/expr2/c60_local_latent2_nd2_bk0.5_pe100_mn20
+bash run_expr.sh "TFConvNet" "cuda:3" "local" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+300 0.5 2 0.1 100 20 "expr2"
+# log/expr2/c60_wmi3_latent2_nd5_bk0.5_th0.1_pe100_mn20
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+300 0.5 5 0.1 100 20 "expr2"
+# log/expr2/c60_local_latent2_nd5_bk0.5_pe100_mn20
+bash run_expr.sh "TFConvNet" "cuda:3" "local" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+300 0.5 5 0.1 100 20 "expr2"
+
 # test
 bash run.sh 0.01 "TFConvNet" 1 64 60 "cuda:3" "weighted_model_interpolation3" "loss" "affinity_topK" \
 "non-iid_latent2" 150 100 999 "test2" 0.5 2
-
-# GPU3

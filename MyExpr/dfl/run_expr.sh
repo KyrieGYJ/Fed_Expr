@@ -13,9 +13,11 @@ BROADCAST_K=${10}
 NUM_DIST=${11}
 THRESHOLD=${12}
 PRETRAIN_EPOCH=${13}
-EXPR_NAME=${14}
+MALIGNANT_NUM=${14}
+EXPR_NAME=${15}
 
 NAME=c${N}
+
 # 缩短名称
 if [[ "$TRAINER_STRATEGY" =~ "weighted_model_interpolation" ]]
 then
@@ -23,6 +25,7 @@ then
 else
   NAME=${NAME}_${TRAINER_STRATEGY}
 fi
+
 if [[ "$DATA_DISTRIBUTION" =~ "path" ]]
 then
   NAME=${NAME}_path${DATA_DISTRIBUTION:0-1}
@@ -31,6 +34,7 @@ then
   NAME=${NAME}_latent${DATA_DISTRIBUTION:0-1}
 fi
 NAME=${NAME}_nd${NUM_DIST}
+NAME=${NAME}_bk${BROADCAST_K}
 if [[ "$TRAINER_STRATEGY" =~  "weighted" ]]
 then
 NAME=${NAME}_th${THRESHOLD}
@@ -39,6 +43,11 @@ fi
 if [ $PRETRAIN_EPOCH -gt 0 ]
 then
   NAME=${NAME}_pe${PRETRAIN_EPOCH}
+fi
+
+if [ $MALIGNANT_NUM -gt 0 ]
+then
+  NAME=${NAME}_mn${MALIGNANT_NUM}
 fi
 
 if [[ $EXPR_NAME == "" || $EXPR_NAME == "bash" ]]
@@ -70,5 +79,5 @@ else
   echo "启动试验，日志位置: log/${EXPR_NAME}/${NAME} ."
   nohup bash run.sh $MODEL $DEVICE $TRAINER_STRATEGY $BROAD_STRATEGY $EPOCH  $N $LR \
         $DATA_DISTRIBUTION $COMM_ROUND $BROADCAST_K $NUM_DIST $THRESHOLD ${PRETRAIN_EPOCH} \
-        ${NAME} ${EXPR_NAME} > log/${EXPR_NAME}/${NAME} 2>&1 &
+        ${MALIGNANT_NUM} ${NAME} ${EXPR_NAME} > log/${EXPR_NAME}/${NAME} 2>&1 &
 fi

@@ -93,6 +93,7 @@ class Broadcaster(object):
         if sender_id >= self.args.client_num_in_total - self.args.malignant_num:
             self.random(sender_id, model)
             return
+
         # 根据上一轮接收到的neighbor模型，更新affinity矩阵，对矩阵聚类，并转发自身模型以及affinity权重到对应聚类上
         client_dic = self.recorder.client_dict
         sender = client_dic[sender_id]
@@ -119,6 +120,14 @@ class Broadcaster(object):
         topK.sort()
         self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to {topK}",
                                   self.log_condition(sender_id))
+
+
+        # 如果仍有未尝试过探索的节点（try_set记录未发送过的）
+        if len(sender.cache_keeper.try_set) < self.args.client_num_in_total:
+            print(
+                f"client [{sender_id}] haven't tried all! {self.args.client_num_in_total - len(sender.cache_keeper.try_set)}")
+            for i in topK:
+                sender.cache_keeper.try_set.add(i)
 
         if self.args.malignant_num > 0:
             self.logger.log_with_name(f"client [{sender_id}] affinity_topK send to "

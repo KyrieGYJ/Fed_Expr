@@ -14,8 +14,9 @@ BROADCAST_K=${10}
 NUM_DIST=${11}
 THRESHOLD=${12}
 PRETRAIN_EPOCH=${13}
-NAME=${14}
-EXPR_NAME=${15}
+MALIGNANT_NUM=${14}
+NAME=${15}
+EXPR_NAME=${16}
 
 echo "当前试验："$NAME
 
@@ -33,6 +34,7 @@ python3 main.py \
   --comm_round $COMM_ROUND \
   --aggregate_threshold $THRESHOLD \
   --name $NAME \
+  --malignant_num $MALIGNANT_NUM \
   --project_name $EXPR_NAME \
   --pretrain_epoch $PRETRAIN_EPOCH
 
