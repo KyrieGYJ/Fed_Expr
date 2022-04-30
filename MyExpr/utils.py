@@ -202,8 +202,12 @@ def calc_emd_heatmap(train_data, train_idx_dict, args):
     epsilon = 1e-10
     for c_id_from in range(client_num_in_total):
         for c_id_to in range(client_num_in_total):
-            train_data_from = [train_data.targets[x] for x in train_idx_dict[c_id_from]]
-            train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
+            # pytorch1.10
+            # train_data_from = [train_data.targets[x] for x in train_idx_dict[c_id_from]]
+            # train_data_to = [train_data.targets[x] for x in train_idx_dict[c_id_to]]
+            # pytorch 1.8
+            train_data_from = [train_data.train_labels[x] for x in train_idx_dict[c_id_from]]
+            train_data_to = [train_data.train_labels[x] for x in train_idx_dict[c_id_to]]
             emd = compute_emd(train_data_from, train_data_to)
             emd_list[c_id_from][c_id_to] = emd
     emd_list = 1 - (emd_list - emd_list.min()) / (emd_list.max() - emd_list.min() + epsilon)

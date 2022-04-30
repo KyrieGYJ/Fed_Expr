@@ -201,9 +201,11 @@ class Data(object):
                 DataLoader(class_test_dataset[i], batch_size=args.batch_size, shuffle=True,
                            num_workers=args.num_workers))
 
+
         # 统计每个类分别被哪些client持有
         for ix in dict_users_train:
-            self.client_class_dic[ix] = np.unique(torch.tensor(train_data.targets)[dict_users_train[ix]])
+            # self.client_class_dic[ix] = np.unique(torch.tensor(train_data.targets)[dict_users_train[ix]])
+            self.client_class_dic[ix] = np.unique(torch.tensor(train_data.train_labels)[dict_users_train[ix]])
 
             # client记入字典 {label:client_id}
             for label in self.client_class_dic[ix]:
@@ -234,16 +236,21 @@ class Data(object):
                            num_workers=args.num_workers))
 
             # 验证
-            train_class = np.unique(torch.tensor(train_data.targets)[dict_users_train[client_id]])
-            test_class = np.unique(torch.tensor(test_data.targets)[dict_users_test[client_id]])
+            # train_class = np.unique(torch.tensor(train_data.targets)[dict_users_train[client_id]])
+            # test_class = np.unique(torch.tensor(test_data.targets)[dict_users_test[client_id]])
+            train_class = np.unique(torch.tensor(train_data.train_labels)[dict_users_train[client_id]])
+            test_class = np.unique(torch.tensor(test_data.test_labels)[dict_users_test[client_id]])
             train_class.sort()
             test_class.sort()
             assert((train_class == test_class).all())
             print(f"client {client_id} has {len(client_train_dataset[client_id])} train data, "
                   f"{len(client_validation_dataset[client_id])} validation data and {len(client_test_dataset[client_id])} test data")
 
+        # average_emd = np.mean(
+        #     [compute_emd([train_data.targets[x] for x in dict_users_train[ix]], train_data.targets) for ix in
+        #      dict_users_train], axis=0)
         average_emd = np.mean(
-            [compute_emd([train_data.targets[x] for x in dict_users_train[ix]], train_data.targets) for ix in
+            [compute_emd([train_data.train_labels[x] for x in dict_users_train[ix]], train_data.train_labels) for ix in
              dict_users_train], axis=0)
         print(f'> Global mean EMD: {average_emd}')
 
@@ -390,7 +397,11 @@ class Data(object):
         # 此划分下non_iid_test无意义
         train_data, test_data, args = self.train_data, self.test_data, self.args
         train_idx_dict, test_idx_dict = self.partition_data(args.client_num_in_total, alpha=0.5)
-        Y_train = np.array(self.train_data.targets)
+        # pytorch 1.10
+        # Y_train = np.array(self.train_data.targets)
+        # pytorch 1.8
+        Y_train = np.array(self.train_data.train_labels)
+
 
         self.train_idx_dict = train_idx_dict
 
@@ -691,7 +702,10 @@ class Data(object):
         # 打印划分结果
         for c_id in range(args.client_num_in_total):
             train_set = dict_users_train[c_id]
-            labels, counts = np.unique(torch.tensor(self.train_data.targets)[train_set], return_counts=True)
+            # pytorch 1.10
+            # labels, counts = np.unique(torch.tensor(self.train_data.targets)[train_set], return_counts=True)
+            # pytorch 1.8
+            labels, counts = np.unique(torch.tensor(self.train_data.train_labels)[train_set], return_counts=True)
             print(f"client {c_id} train (labels, counts) {[(i, count) for i, count in enumerate(counts)]}")
             test_set = dict_users_test[c_id]
             labels, counts = np.unique(torch.tensor(self.test_data.targets)[test_set], return_counts=True)
@@ -707,9 +721,16 @@ class Data(object):
 
     # 将dataset中的数据（下标）放入字典 {label : index}
     def data_per_label(self, dataset):
+        if hasattr(dataset, "train_labels"):
+            targets = dataset.train_labels
+        elif hasattr(dataset, "test_labels"):
+            targets = dataset.test_labels
+        else:
+            targets = dataset.targets
         idxs_dic = {}
         for i in range(len(dataset)):
-            label = torch.tensor(dataset.targets[i]).item()
+            # label = torch.tensor(dataset.targets[i]).item()
+            label = torch.tensor(targets[i]).item()
             if label not in idxs_dic.keys():
                 idxs_dic[label] = []
             idxs_dic[label].append(i)
@@ -730,8 +751,17 @@ class Data(object):
 
         idxs_dict = self.data_per_label(dataset)
 
+        # pytorch1.11 听我说谢谢你 因为有你 温暖了四季
+        if hasattr(dataset, "train_labels"):
+            targets = dataset.train_labels
+        elif hasattr(dataset, "test_labels"):
+            targets = dataset.test_labels
+        else:
+            targets = dataset.targets
+
         # 统计标签种类
-        num_classes = len(np.unique(dataset.targets))
+        # num_classes = len(np.unique(dataset.targets))
+        num_classes = len(np.unique(targets))
         # 计算每个类要分出多少个shard
         shard_per_class = int(shard_per_user * num_users / num_classes)
 
@@ -779,7 +809,8 @@ class Data(object):
         test = []
         for key, value in dict_users.items():
             # 抽出当前client包含的class
-            x = np.unique(torch.tensor(dataset.targets)[value])
+            # x = np.unique(torch.tensor(dataset.targets)[value])
+            x = np.unique(torch.tensor(targets)[value])
             assert (len(x)) <= shard_per_user
             test.append(value)
         test = np.concatenate(test)
@@ -810,11 +841,13 @@ class Data(object):
     # todo 引用FedML
     def partition_data(self, n_nets, alpha):
         print("*********partition data***************")
-        X_train, y_train = self.train_data.data, np.array(self.train_data.targets)
+        # X_train, y_train = self.train_data.data, np.array(self.train_data.targets) # pytorch 1.10
+        X_train, y_train = self.train_data.train_data, np.array(self.train_data.train_labels)  # pytorch 1.8
         X_test, y_test = self.test_data.data, np.array(self.test_data.targets)
 
         min_size = 0
-        K = len(np.unique(self.train_data.targets))
+        # K = len(np.unique(self.train_data.targets)) # pytorch 1.10
+        K = len(np.unique(self.train_data.train_labels))  # pytorch 1.8
         train_N, test_N = len(y_train), len(y_test)
         print(f"train_N = {train_N}, test_N = {test_N}, K = {K}")
 
@@ -895,10 +928,17 @@ class Data(object):
         self.kmeans_train_fname = f'{kmeans_labels_prefix}-{self.embedding_fname}'
         self.kmeans_test_fname = f'{kmeans_labels_prefix}-{self.test_embedding_fname}'
 
-        dict_data = {'inputs': np.array(self.train_data.data),
-                     'targets': np.array(self.train_data.targets),
-                     'test_inputs': np.array(self.test_data.data),
-                     'test_targets': np.array(self.test_data.targets)}
+        # pytorch 1.10
+        # dict_data = {'inputs': np.array(self.train_data.data),
+        #              'targets': np.array(self.train_data.targets),
+        #              'test_inputs': np.array(self.test_data.data),
+        #              'test_targets': np.array(self.test_data.targets)}
+
+        # pytorch 1.8
+        dict_data = {'inputs': np.array(self.train_data.train_data),
+                     'targets': np.array(self.train_data.train_labels),
+                     'test_inputs': np.array(self.test_data.test_data),
+                     'test_targets': np.array(self.test_data.test_labels)}
 
         try:  # First try to load pre-computed data
             path = join(self.precomputed_root, self.train_embedding_fname)
@@ -982,8 +1022,13 @@ class Data(object):
 
                 kmeans_labels_train_test = km.labels_
                 # Partition into train and test
-                kmeans_labels = kmeans_labels_train_test[:len(self.train_data.targets)]
-                kmeans_labels_test = kmeans_labels_train_test[len(self.train_data.targets):]
+                # pytorch 1.10
+                # kmeans_labels = kmeans_labels_train_test[:len(self.train_data.targets)]
+                # kmeans_labels_test = kmeans_labels_train_test[len(self.train_data.targets):]
+
+                # pytorch 1.8
+                kmeans_labels = kmeans_labels_train_test[:len(self.train_data.train_labels)]
+                kmeans_labels_test = kmeans_labels_train_test[len(self.train_data.train_labels):]
 
                 assert len(kmeans_labels) == len(dict_data['inputs'])
                 print_debug(len(kmeans_labels_test), 'len(kmeans_labels_test)')
@@ -1112,7 +1157,9 @@ class Data(object):
                 client_dataset = torch.utils.data.Subset(self.train_data, indices=client_indices)
                 client_test_dataset = torch.utils.data.Subset(self.test_data, indices=client_test_indices)
 
-                client_targets = [self.train_data.targets[x] for x in client_indices]
+                # pytorch 1.10
+                # client_targets = [self.train_data.targets[x] for x in client_indices]
+                client_targets = [self.train_data.train_labels[x] for x in client_indices]
                 client_unique_classes = np.unique(client_targets)
 
                 # 划分validation
@@ -1168,7 +1215,11 @@ class Data(object):
         for ix, dist in enumerate(distributions):
             for i in range(self.args.num_clients_per_dist):
                 # print(dist['clients_data'][i][1])
-                emd_list.append(compute_emd([self.train_data.targets[x] for x in dist['clients_data'][i][1]], self.train_data.targets))
+                # pytorch 1.10
+                # emd_list.append(compute_emd([self.train_data.targets[x] for x in dist['clients_data'][i][1]], self.train_data.targets))
+                # pytorch 1.8
+                emd_list.append(compute_emd([self.train_data.train_labels[x] for x in dist['clients_data'][i][1]],
+                                            self.train_data.train_labels))
 
         # average_emd = np.mean(emd_list, axis=0)
         print(emd_list)

@@ -57,17 +57,27 @@ bash run.sh 0.01 "TFConvNet" 1 64 10 "cuda:3" "weighted_model_interpolation3" "l
 bash run_expr.sh "TFConvNet" "cuda:2" "local" "affinity_topK" 1 20 0.1 "non-iid_pathological" \
 150 0.5 2 0.1 0 0 "expr1"
 # log/expr1/c100_local_pathl_nd2
-bash run_expr.sh "TFConvNet" "cuda:2" "local" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
-150 0.5 2 0.1 0 0 "expr1"
-# log/expr1/c20_wmi3_pathl_nd2_th0.1
+bash run_expr.sh "TFConvNet" "cuda:3" "local" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+500 0.5 2 0.1 0 0 "expr1"
+
+# todo 记录
+# log/expr1/c20_wmi3_pathl_nd2_bk0.2_th0.1
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 20 0.1 "non-iid_pathological" \
 150 0.2 2 0.1 0 0 "expr1"
-# log/expr1/c100_wmi3_pathl_nd2_th0.1
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
-150 0.2 2 0.1 0 0 "expr1"
+
+# 4.29
+# log/expr1/c100_wmi3_pathl_nd2_bk0.2_th0.1
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+500 0.2 2 0.1 0 0 "expr1"
+bash run_expr.sh "TFConvNet" "cuda:3" "model_average" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+500 0.2 2 0.1 0 0 "expr1"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "random" 1 100 0.1 "non-iid_pathological" \
+500 0.2 2 0.1 0 0 "expr1"
+bash run_expr.sh "TFConvNet" "cuda:3" "model_average" "random" 1 100 0.1 "non-iid_pathological" \
+500 0.2 2 0.1 0 0 "expr1"
 
 # with malignant node
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
-150 0.5 2 0.1 0 20 "expr1"
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
-150 0.5 2 0.1 0 0 "expr1"
+#bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+#150 0.5 2 0.1 0 20 "expr1"
+#bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+#150 0.5 2 0.1 0 20 "expr1"

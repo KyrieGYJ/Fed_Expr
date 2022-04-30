@@ -70,10 +70,10 @@ class Broadcaster(object):
         else:
             neighbor_list = range(self.args.client_num_in_total)
 
-        np.random.seed(int(time.time() * 1000) % 10000)  # make sure for each comparison, we are selecting the same clients each round
+        np.random.seed(int(time.time() * 1000) % 10000)
         client_indexes = np.random.choice(neighbor_list, K, replace=False)
-
-        self.logger.log_with_name(f"client [{sender_id}] random send to {client_indexes.sort()}", self.log_condition(sender_id))
+        client_indexes.sort()
+        self.logger.log_with_name(f"client [{sender_id}] random send to {client_indexes}", self.log_condition(sender_id))
 
         if sender_id < self.args.client_num_in_total - self.args.malignant_num:
             for receiver_id in client_indexes:

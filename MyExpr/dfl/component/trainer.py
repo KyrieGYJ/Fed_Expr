@@ -80,6 +80,9 @@ class Trainer(object):
         elif strategy == "fedavg":
             self.central_server = Server(self.args)
             self.train = self.fedavg
+        elif strategy == "model_average":
+            self.train = self.model_average
+
 
     ###################
     # 基础方法(批量操作) #
@@ -92,6 +95,7 @@ class Trainer(object):
         for c_id in tqdm(self.malignant_dict, desc="malignant broadcast"):
             self.malignant_dict[c_id].broadcast()
 
+    # todo 分离
     def update_broadcast_weight(self):
         for sender_id in tqdm(self.client_dict, desc="update broadcast weight"):
             if self.recorder.rounds > 0:
@@ -182,9 +186,16 @@ class Trainer(object):
 
     # 权重插值
     def weighted_interpolation_update(self):
-        for c_id in tqdm(self.client_dict, desc="weighted_interpolation"):
+        for c_id in tqdm(self.client_dict, desc="calc_new_parameters"):
             if self.strategy == "weighted_model_interpolation3":
                 self.client_dict[c_id].weighted_model_interpolation_update3()
+        for c_id in tqdm(self.client_dict, desc="update_parameters"):
+            self.client_dict[c_id].model.load_state_dict(self.client_dict[c_id].state_dict)
+
+    def model_average_update(self):
+        for c_id in tqdm(self.client_dict, desc="calc_new_parameters"):
+            if self.strategy == "model_average":
+                self.client_dict[c_id].model_average_update()
         for c_id in tqdm(self.client_dict, desc="update_parameters"):
             self.client_dict[c_id].model.load_state_dict(self.client_dict[c_id].state_dict)
 
@@ -257,13 +268,31 @@ class Trainer(object):
     # 权重模型插值
     def weighted_model_interpolation(self):
         self.cache_model() # 记录local train之前的model
-        self.local()
-        self.update_broadcast_weight()
-        self.broadcast()
-        self.cache_received()
-        self.update_update_weight()
-        self.weighted_interpolation_update()
-        self.clear_received()
+        # before local train
+        self.local() # 本地训练
+        # before broadcast
+        self.update_broadcast_weight() # 更新广播权重 (用到上回接受到的模型loss以及上回接受到的客户下标信息)
+        self.clear_received()  # 广播前清空received_list
+        self.broadcast() # 广播 (需要先清空received_list)
+        # before update
+        self.cache_received() # 缓存当前的接受信息到cache_keeper(已经废弃)
+        self.update_update_weight() # 更新插值权重
+        # update
+        self.weighted_interpolation_update() # 权重插值生成新模型
+
+    def model_average(self):
+        self.cache_model()  # 记录local train之前的model
+        # before local train
+        self.local()  # 本地训练
+        # before broadcast
+        self.update_broadcast_weight()  # 更新广播权重 (用到上回接受到的模型loss以及上回接受到的客户下标信息)
+        self.clear_received()  # 清空received_list
+        self.broadcast()  # 广播 (需要先清空received_list)
+        # before update
+        self.cache_received()  # 缓存当前的接受信息到cache_keeper(已经废弃)
+        self.update_update_weight()  # 更新插值权重
+        # update
+        self.model_average_update()
 
     # 只跟标签重叠的client通信
     def oracle_class(self):

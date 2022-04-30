@@ -26,6 +26,13 @@ else
   NAME=${NAME}_${TRAINER_STRATEGY}
 fi
 
+if [[ "$BROAD_STRATEGY" == "affinity_topK" ]]
+then
+  NAME=${NAME}_at
+else
+  NAME=${NAME}_${BROAD_STRATEGY}
+fi
+
 if [[ "$DATA_DISTRIBUTION" =~ "path" ]]
 then
   NAME=${NAME}_path${DATA_DISTRIBUTION:0-1}

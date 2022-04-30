@@ -23,10 +23,7 @@ bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_
 
 # 对齐expr5
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
-150 0.5 2 0.1 100 20 "testMali4"
-
-# 154139 192621 444189 224595 382693 392580 170268 447293 1625
-
+150 0.5 2 0.1 100 20 "testMali2"
 
 ## over different data setting
 #
