@@ -25,6 +25,32 @@ bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
 150 0.5 2 0.1 100 20 "testMali2"
 
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.4 2 0.1 0 0 "testBK"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.3 2 0.1 0 0 "testBK"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.2 2 0.1 0 0 "testBK"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.1 2 0.1 0 0 "testBK"
+
+bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.4 2 0.1 0 0 "testBK2"
+bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.3 2 0.1 0 0 "testBK2"
+bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.2 2 0.1 0 0 "testBK2"
+bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.1 2 0.1 0 0 "testBK2"
+
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.4 2 0.1 0 0 "testBK3"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.3 2 0.1 0 0 "testBK3"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.2 2 0.1 0 0 "testBK3"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.1 2 0.1 0 0 "testBK3"
 ## over different data setting
 #
 ## baseline

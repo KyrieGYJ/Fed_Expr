@@ -63,18 +63,35 @@ bash run_expr.sh "TFConvNet" "cuda:1" "model_average" "random" 1 60 0.1 "non-iid
 bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
 500 0.5 2 0.1 0 20 "expr2"
 
-# 4.29
-bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
-500 0.5 2 0.1 100 100 "expr2"
-
 # 带宽受限情况
-bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
-500 0.1 2 0.1 100 0 "expr2"
-bash run_expr.sh "TFConvNet" "cuda:1" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
 500 0.1 2 0.1 0 0 "expr2"
-bash run_expr.sh "TFConvNet" "cuda:1" "model_average" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
-500 0.1 2 0.1 100 0 "expr2"
-bash run_expr.sh "TFConvNet" "cuda:1" "model_average" "random" 1 60 0.1 "non-iid_latent2" \
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
+500 0.1 2 0.1 0 0 "expr2"
+bash run_expr.sh "TFConvNet" "cuda:2" "model_average" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.1 2 0.1 0 0 "expr2"
+bash run_expr.sh "TFConvNet" "cuda:2" "model_average" "random" 1 60 0.1 "non-iid_latent2" \
 500 0.1 2 0.1 0 0 "expr2"
 
+# 选择合适的BK
+# BK=0.2
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.2 2 0.1 0 0 "expr2"
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
+500 0.2 2 0.1 0 0 "expr2"
+# BK=0.3
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.3 2 0.1 0 0 "expr2"
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
+500 0.3 2 0.1 0 0 "expr2"
+# BK=0.4
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+500 0.4 2 0.1 0 0 "expr2"
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
+500 0.4 2 0.1 0 0 "expr2"
+# BK=0.5
+bash run_expr.sh "TFConvNet" "cuda:0" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+1000 0.5 2 0.1 0 0 "expr2"
+bash run_expr.sh "TFConvNet" "cuda:0" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
+1000 0.5 2 0.1 0 0 "expr2"
 

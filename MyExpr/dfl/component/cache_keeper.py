@@ -2,7 +2,7 @@ import copy
 import numpy as np
 from MyExpr.utils import calc_eval, compute_parameter_difference, eval, calc_eval_speed_up_using_cache
 from MyExpr.dfl.component.logger import logger
-
+import time
 
 class keeper(object):
     """
@@ -32,6 +32,8 @@ class keeper(object):
 
         self.sigma = 0.1  # 防止model_dif最大的delta loss丢失
         self.epsilon = 1e-9
+        self.chance = 0.5 # 有概率不聚合邻居权重，缓解"群盲"问题
+        self.rand_num = 0.
 
         # local_train前的模型缓存
         self.last_local_model = copy.deepcopy(self.host.model.cpu())
@@ -130,8 +132,6 @@ class keeper(object):
         self.logger.log_with_name(f"[id:{self.host.client_id}]: raw_eval_loss[before handle unknown] {raw_eval_loss_list}",
                                   self.log_condition & moniter)
 
-
-        # 初始轮先发送未发送过的，初步试探后再开始正式训练。
         for i in range(self.args.client_num_in_total):
             if i not in self.known_set:
                 # 不能赋予平均值，如果赋予平均值后一直没有收到对方的消息，则历史一直保持平均值，如果平均值的评价恰好很好，
@@ -171,8 +171,8 @@ class keeper(object):
     def update_broadcast_weight(self, balanced=True):
         moniter = True
 
-        base_loss = self.last_local_loss # todo 这块应该是用当前local train后的模型
-
+        # base_loss = self.last_local_loss # todo 这块应该是用当前local train后的模型
+        base_loss = self.raw_eval_loss_list[self.host.client_id]
 
         # delta_loss using loss memory
         new_broadcast_w_list = base_loss - self.raw_eval_loss_list
@@ -184,27 +184,26 @@ class keeper(object):
         if balanced:
             new_broadcast_w_list /= len(self.host.validation_set)
 
-        # todo 尝试norm(还行)
         new_broadcast_w_list = (new_broadcast_w_list - np.min(new_broadcast_w_list)) \
                                / (np.max(new_broadcast_w_list) - np.min(new_broadcast_w_list) + self.epsilon)
         new_broadcast_w_list = new_broadcast_w_list / max(np.sum(new_broadcast_w_list), self.epsilon)
 
-        # todo 对于正在复用历史(上一轮没收到)的([隐含]或者缺少历史(从未收到过)的部分赋予聚合权重) ，相当于聚合了所有有效节点对某个不信任节点的评分，
-        # todo 软性避免有效节点与本身不互信的死锁，同时还避免了盲目探索导致自身特征泄漏。
-        # if np.sum(self.last_aggregate_broadcast_weight) != 0:
-        #
-        #     for i in range(self.args.client_num_in_total):
-        #         # todo bug received_model_dict 在回合开始前被清空了，所以相当于每次都直接全部复用了上次的aggregated_received_weight，贯彻始终。
-        #         # if i not in self.host.received_model_dict or i not in self.known_set:
-        #         if i not in self.host.received_model_dict:
-        #             new_broadcast_w_list[i] = self.last_aggregate_broadcast_weight[i]
-        #
-        #     # 重新归一化 todo 调整比例。
-        #     new_broadcast_w_list = new_broadcast_w_list / max(np.sum(new_broadcast_w_list), self.epsilon)
 
-        # 如果有需要复用历史的，融合聚合到的权重进行调整。
-        if np.sum(self.last_aggregate_broadcast_weight) != 0 and len(self.host.received_model_dict) != self.args.client_num_in_total:
-            r = 0.5 # 融合权重
+        # (1) 网络稠密情况下大概率有缺省值 -> 如果复用了历史的值（缺省值），融合聚合到的权重进行调整。
+        # (2) 会有群盲问题，即当大家认为某个模型垃圾时，实际上它不垃圾，聚合完了以后的权值也会变成认为它垃圾。
+        # -> 加入随机数，有概率不聚合，已经能缓解了
+        self.rand_num = np.random.rand()
+        if self.rand_num >= self.chance:
+            self.logger.log_with_name(
+                f"client{self.host.client_id} rand_num[{self.rand_num}] >= chance[{self.chance}], don't aggregate broadcast_weight",
+                self.log_condition)
+        else:
+            self.logger.log_with_name(
+                f"client{self.host.client_id} rand_num[{self.rand_num}] < chance[{self.chance}], aggregate broadcast_weight",
+                self.log_condition)
+        if self.rand_num < self.chance and np.sum(self.last_aggregate_broadcast_weight) != 0 and len(
+                self.host.received_model_dict) != self.args.client_num_in_total:
+            r = 0.5  # 融合权重
             if np.sum(self.last_aggregate_broadcast_weight) != 1.0:
                 self.last_aggregate_broadcast_weight = self.last_aggregate_broadcast_weight \
                                                        / np.sum(self.last_aggregate_broadcast_weight)
@@ -212,10 +211,6 @@ class keeper(object):
             new_broadcast_w_list = r * new_broadcast_w_list + (1 - r) * self.last_aggregate_broadcast_weight
             # 重新归一化
             new_broadcast_w_list = new_broadcast_w_list / max(np.sum(new_broadcast_w_list), self.epsilon)
-
-        new_broadcast_w_list = (new_broadcast_w_list - np.min(new_broadcast_w_list)) \
-                               / (np.max(new_broadcast_w_list) - np.min(new_broadcast_w_list) + self.epsilon)
-        new_broadcast_w_list = new_broadcast_w_list / max(np.sum(new_broadcast_w_list), self.epsilon)
 
         self.broadcast_weight = new_broadcast_w_list
         self.logger.log_with_name(f"[id:{self.host.client_id}]: balanced_broadcast_w_list:{new_broadcast_w_list}",
@@ -229,28 +224,31 @@ class keeper(object):
         # 添加指数遗忘，防止前面初始值积累出来的差距后续难以追赶
         r = 0.3
         self.p = r * self.p
-
         # 生成P之前对weight进行归一化，确保每回合影响权重的能力是相同的。 (减去min确保大于等于0)
         # 因为mutual_update_weight3也进行过归一化，所以aggregated_received_broadcast_weight意识归一化的
         shift_positive_weight = self.broadcast_weight - np.min(self.broadcast_weight)
         normed_broadcast_weight = shift_positive_weight / (np.sum(shift_positive_weight) + self.epsilon)
-        aggregated_received_broadcast_weight = self.mutual_update_weight3[self.host.client_id] * normed_broadcast_weight
+        aggregated_received_broadcast_weight = self.mutual_update_weight3[
+                                                   self.host.client_id] * normed_broadcast_weight
+        # 会有群盲问题，即当大家认为某个模型垃圾时，实际上它不垃圾，聚合完了以后的权值也会变成认为它垃圾。
+        # -> 加入随机数，有概率不聚合
+        if self.rand_num >= self.chance:
+            self.p += (1 - r) * normed_broadcast_weight
+        else:
+            for received_id in self.host.received_w_dict:
+                shift_positive_weight = self.host.received_w_dict[received_id] - np.min(
+                    self.host.received_w_dict[received_id])
+                normed_broadcast_weight = shift_positive_weight / (np.sum(shift_positive_weight) + self.epsilon)
+                aggregated_received_broadcast_weight += self.mutual_update_weight3[received_id] * normed_broadcast_weight
 
-        for received_id in self.host.received_w_dict:
-            shift_positive_weight = self.host.received_w_dict[received_id] - np.min(
-                self.host.received_w_dict[received_id])
-            normed_broadcast_weight = shift_positive_weight / (np.sum(shift_positive_weight) + self.epsilon)
-            aggregated_received_broadcast_weight += self.mutual_update_weight3[received_id] * normed_broadcast_weight
-
-        self.p += (1 - r) * aggregated_received_broadcast_weight
+            self.p += (1 - r) * aggregated_received_broadcast_weight
         self.logger.log_with_name(f"[id:{self.host.client_id}]: affinity:{self.p}",
                                   self.log_condition)
 
-        # todo future-work 尝试采用聚合的广播权重去更新本地广播权重 (不能直接聚合，要先剔除恶意值)
+        # todo future-work 不能直接聚合，要先剔除恶意值
         self.last_aggregate_broadcast_weight = aggregated_received_broadcast_weight
         self.logger.log_with_name(f"[id:{self.host.client_id}]: aggregated_received_broadcast_weight:{aggregated_received_broadcast_weight}",
                                   self.log_condition)
-
 
     def update_update_weight(self, model_dif_adjust=True):
         moniter = False
@@ -273,8 +271,6 @@ class keeper(object):
         if model_dif_adjust:
             # 接收到了新模型，计算新model_dif，对于没接收到的复用历史数据
             self.update_model_dif()
-            # new_update_w_list = new_update_w_list * (1 - self.dif_list + self.sigma)  # 和模型差距成反比
-            # todo 试试除法的做法 (好像不错)
             new_update_w_list = new_update_w_list / (self.dif_list + self.sigma) # 和模型差距成反比
 
         self.logger.log_with_name(f"[id:{self.host.client_id}]: update_w_list[model_dif_adjust]:{new_update_w_list}",
