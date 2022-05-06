@@ -8,3 +8,8 @@ class logger(object):
     def log_with_name(self, content, condition=False):
         if condition:
             print(f"[{self.name}]-{content}")
+
+    def debug_log(self, content):
+        DEBUG = False
+        if DEBUG:
+            print(f"DEBUG >>> [{self.name}]-{content}")

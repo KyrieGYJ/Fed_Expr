@@ -7,6 +7,7 @@ import random
 from MyExpr.dfl.component.logger import logger
 from MyExpr.utils import generate_heatmap
 
+
 class Broadcaster(object):
 
     def __init__(self, args):
@@ -25,13 +26,11 @@ class Broadcaster(object):
         # 记录客户之间的通信频率
         self.broadcast_freq = None
 
-
     def register_recorder(self, recorder):
         self.recorder = recorder
 
     def initialize(self):
         # 通信频率矩阵
-        total_num = self.args.client_num_in_total + self.args.malignant_num
         self.broadcast_freq = np.zeros([self.args.client_num_in_total, self.args.client_num_in_total], dtype=np.float64)
 
     def use(self, strategy):
@@ -84,10 +83,7 @@ class Broadcaster(object):
             for receiver_id in client_indexes:
                 self.receive_from_neighbors(sender_id, model, receiver_id, malignant_tp_weight, malignant_broadcast_weight)
 
-    #######################################
-    #         variants of affinity        #
-    #######################################
-    # 取topK
+    # 根据基于广播价值的广播权重筛选TopK
     def affinity_topK(self, sender_id, model, affinity_matrix=None):
         # 恶意节点随机广播
         if sender_id >= self.args.client_num_in_total - self.args.malignant_num:

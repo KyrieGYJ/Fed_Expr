@@ -20,18 +20,6 @@ class Recorder(object):
         broadcaster.register_recorder(self)
         topK_selector.register_recoder(self)
 
-        # todo 垃圾代码
-        trainer.non_iid_test_set = data.non_iid_test_set
-        trainer.broadcaster = broadcaster
-        trainer.test_non_iid = data.test_non_iid
-        trainer.client_class_dic = data.client_class_dic
-        trainer.class_client_dic = data.class_client_dic
-        trainer.dist_client_dict = data.dist_client_dict
-        trainer.client_dist_dict = data.client_dist_dict
-        trainer.test_non_iid = data.test_non_iid
-        trainer.test_loader = data.test_all
-        trainer.test_data = data.test_data
-
         # 每个client对应的训练数据下标
         self.train_idx_dict = None
 
@@ -39,6 +27,12 @@ class Recorder(object):
         self.wandb_log = True
         self.rounds = 0
         print("完毕")
+
+    def initialize(self, malignant_dict):
+        self.trainer.malignant_dict = malignant_dict
+        self.malignant_dict = malignant_dict
+        if self.args.trainer_strategy in ["fedavg", "fedprox", "pfedme", "apfl", "fedem"]:
+            self.trainer.initialize()
 
     # 按照聚类重排client_id(未验证的方法)
     def reallocate_client_id_by_dist(self):
@@ -59,8 +53,4 @@ class Recorder(object):
             self.client_dict = new_client_dic
             self.data.train_idx_dict = new_train_idx_dict
             print(f"总共{len(self.data.dist_client_dict)}类数据")
-        # for c_id in range(client_num_in_total):
-        #     print(new_client_dist_dict[c_id])
 
-    def next_epoch(self):
-        self.epoch += 1

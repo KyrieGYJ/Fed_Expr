@@ -4,6 +4,8 @@ from MyExpr.utils import calc_eval, compute_parameter_difference, eval, calc_eva
 from MyExpr.dfl.component.logger import logger
 import time
 
+
+# 权重管理模块
 class keeper(object):
     """
     主要是解耦权重模块，不然client太重了
@@ -13,7 +15,7 @@ class keeper(object):
         self.recorder = host.recorder
         self.args = self.recorder.args
         self.logger = logger(self, "cache_keeper")
-        self.log_condition = self.host.client_id == 35
+        self.log_condition = self.host.client_id == 35 and False
 
         # 接收缓存
         self.topology_weight_memory = {}
@@ -25,9 +27,7 @@ class keeper(object):
         self.broadcast_weight = np.zeros((self.args.client_num_in_total,))
         self.p = np.zeros((self.args.client_num_in_total,))
 
-        self.mutual_update_weight3 = []  # 采用delta_loss计算，但是加入自因子
-        # self.mutual_update_weight4 = []  # 采用raw_acc计算
-        # self.mutual_update_weight5 = []  # 采用local_model prior to its current state
+        self.mutual_update_weight = []  # 采用delta_loss计算，但是加入自因子
         self.last_aggregate_broadcast_weight = np.zeros((self.args.client_num_in_total,))
 
         self.sigma = 0.1  # 防止model_dif最大的delta loss丢失
@@ -228,7 +228,7 @@ class keeper(object):
         # 因为mutual_update_weight3也进行过归一化，所以aggregated_received_broadcast_weight意识归一化的
         shift_positive_weight = self.broadcast_weight - np.min(self.broadcast_weight)
         normed_broadcast_weight = shift_positive_weight / (np.sum(shift_positive_weight) + self.epsilon)
-        aggregated_received_broadcast_weight = self.mutual_update_weight3[
+        aggregated_received_broadcast_weight = self.mutual_update_weight[
                                                    self.host.client_id] * normed_broadcast_weight
         # 会有群盲问题，即当大家认为某个模型垃圾时，实际上它不垃圾，聚合完了以后的权值也会变成认为它垃圾。
         # -> 加入随机数，有概率不聚合
@@ -239,7 +239,7 @@ class keeper(object):
                 shift_positive_weight = self.host.received_w_dict[received_id] - np.min(
                     self.host.received_w_dict[received_id])
                 normed_broadcast_weight = shift_positive_weight / (np.sum(shift_positive_weight) + self.epsilon)
-                aggregated_received_broadcast_weight += self.mutual_update_weight3[received_id] * normed_broadcast_weight
+                aggregated_received_broadcast_weight += self.mutual_update_weight[received_id] * normed_broadcast_weight
 
             self.p += (1 - r) * aggregated_received_broadcast_weight
         self.logger.log_with_name(f"[id:{self.host.client_id}]: affinity:{self.p}",
@@ -289,7 +289,7 @@ class keeper(object):
                                                      / (1 - threshold)
             new_update_w_list /= max(np.sum(new_update_w_list), self.epsilon)
 
-        self.mutual_update_weight3 = new_update_w_list
+        self.mutual_update_weight = new_update_w_list
         self.logger.log_with_name(f"[id:{self.host.client_id}]: update_w_list[threshold]:{new_update_w_list}",
                                   self.log_condition)
 

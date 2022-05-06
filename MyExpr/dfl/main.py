@@ -26,6 +26,12 @@ from MyExpr.data import Data
 from MyExpr.utils import generate_heatmap
 from MyExpr.utils import calc_emd_heatmap
 
+from MyExpr.cfl.fedavg_server import FedAvgServer
+from MyExpr.cfl.fedprox_server import FedProxServer
+from MyExpr.cfl.pfedme_server import pFedMeServer
+from MyExpr.cfl.apfl_server import APFLServer
+from MyExpr.cfl.fedem_server import FedEMServer
+
 
 # 固定种子后，deter设置为true能固定每次结果相同
 # torch.backends.cudnn.deterministic = True
@@ -41,9 +47,20 @@ def initialize(args):
     data = Data(args)
     data.generate_loader()
     # 初始化组件
-    trainer = Trainer(args)
+    if args.trainer_strategy == "fedavg":
+        trainer = FedAvgServer(args)
+    elif args.trainer_strategy == "fedprox":
+        trainer = FedProxServer(args)
+    elif args.trainer_strategy == "pfedme":
+        trainer = pFedMeServer(args)
+    elif args.trainer_strategy == "apfl":
+        trainer = APFLServer(args)
+    elif args.trainer_strategy == "fedem":
+        trainer = FedEMServer(args)
+    else:
+        trainer = Trainer(args)
     broadcaster = Broadcaster(args)
-    topK_selector = TopKSelector(args)
+    topK_selector = TopKSelector(args) # todo 删掉
 
     client_num_in_total = args.client_num_in_total
     args.client_num_in_total = client_num_in_total + malignant_num
@@ -69,14 +86,14 @@ def initialize(args):
     for c_id in tqdm(range(malignant_num), desc='setting up malignant client'):
         c = Client(model_builder(num_classes=10), c_id + client_num_in_total, args, data, topK_selector, recorder, broadcaster)
         malignant_dict[c_id + client_num_in_total] = c
-    trainer.malignant_dict = malignant_dict
-    recorder.malignant_dict = malignant_dict
+
+    recorder.initialize(malignant_dict)
 
     broadcaster.initialize()
     return client_dict, data, trainer, recorder, broadcaster
 
 
-def main():
+def main(turn_on_wandb=True):
     parser = add_args()
     args = parser.parse_args()
     if "non-iid" in args.data_distribution:
@@ -93,7 +110,7 @@ def main():
         os.makedirs(f'./heatmap/{project_name}/{name}')
     generate_heatmap(emd_list, f"./heatmap/{project_name}/{name}/emd_heatmap")
 
-    args.turn_on_wandb = name is not None and project_name is not None and True
+    args.turn_on_wandb = name is not None and project_name is not None and turn_on_wandb
 
     if args.pretrain_epoch > 0:
         model_dict_fname = f"./precomputed/pretrain/{args.model}_c{args.client_num_in_total - args.malignant_num}" \
@@ -152,9 +169,11 @@ def main():
 
 
 if __name__ == '__main__':
-    test = False
-    if test:
-        print("测试脚本")
+    test_shell = False
+    turn_on_wandb = False
+    if test_shell:
+        print("测试shell脚本")
     else:
         print(f"当前pid: {os.getpid()}")
-        main()
+        print(f"开始时间：{time.asctime(time.localtime(time.time()))}")
+        main(turn_on_wandb)

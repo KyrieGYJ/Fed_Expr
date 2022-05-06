@@ -3,7 +3,7 @@ import heapq
 import math
 
 
-# 根据特定指标选择topK
+# 根据特定指标选择topK (deprecated)
 class TopKSelector(object):
 
     def __init__(self, args):
@@ -55,7 +55,6 @@ class TopKSelector(object):
     def top_k_by_f1_marco(self, train_X, train_Y, host):
         heap = []
         host_client_id = host.client_id
-        # todo 这种是必然收到邻居模型的情况，可能要改成随机
         host_topology = self.recorder.topology_manager.get_symmetric_neighbor_list(host_client_id)
         for index in range(len(host_topology)):
             if host_topology[index] != 0 and index != host_client_id:
@@ -81,7 +80,6 @@ class TopKSelector(object):
     def top_k_by_f1_micro(self, train_X, train_Y, host):
         heap = []
         host_client_id = host.client_id
-        # todo 这种是必然收到邻居模型的情况，可能要改成随机
         host_topology = self.recorder.topology_manager.get_symmetric_neighbor_list(host_client_id)
         for index in range(len(host_topology)):
             if host_topology[index] != 0 and index != host_client_id:

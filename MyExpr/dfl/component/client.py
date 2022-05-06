@@ -74,9 +74,6 @@ class Client(object):
 
         self.topK_neighbor = None
 
-    ################
-    # an iteration #
-    ################
     def train(self, train_X, train_Y):
         self.optimizer.zero_grad()
         train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
@@ -118,9 +115,6 @@ class Client(object):
                 total_correct += correct
         return total_loss, total_correct
 
-    ##############
-    #  an epoch  #
-    ##############
     def local_train(self):
         self.model.train()
         self.model.to(self.args.device)
@@ -148,8 +142,12 @@ class Client(object):
             return total_loss, total_correct, epsilon, best_alpha
         return total_loss, total_correct
 
+    # 深度互学习更新(效果并不好)
     def deep_mutual_update(self):
         self.model.train()
+        model = copy.deepcopy(self.model)
+        model.train()
+        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=self.args.lr)
         epochs = 1
         total_loss, total_correct = 0.0, 0.0
         total_local_loss, total_KLD_loss = 0.0, 0.0
@@ -159,9 +157,9 @@ class Client(object):
         print(f"self: client {self.client_id} 中有client:[{self.received_model_dict.keys()}]参与互学习")
         for epoch in range(epochs):
             for idx, (train_X, train_Y) in enumerate(self.train_loader):
-                self.optimizer.zero_grad()
+                optimizer.zero_grad()
                 train_X, train_Y = train_X.to(self.device), train_Y.to(self.device)
-                local_outputs = self.model(train_X)
+                local_outputs = model(train_X)
                 local_loss = self.criterion_CE(local_outputs, train_Y)
 
                 if "cuda" in self.args.device:
@@ -191,7 +189,7 @@ class Client(object):
                 local_loss += KLD_loss
 
                 local_loss.backward()
-                self.optimizer.step()
+                optimizer.step()
 
                 if "cuda" in self.device:
                     local_loss = local_loss.cpu()
@@ -199,22 +197,6 @@ class Client(object):
                 total_correct += correct
                 total_KLD_loss += KLD_loss
         return total_loss / epochs, total_correct / epochs, total_local_loss / epochs, total_KLD_loss / epochs
-
-    # push-sum
-
-    # dsgd
-    def model_interpolation_update(self):
-        topology = self.recorder.topology_manager.get_symmetric_neighbor_list(self.client_id)
-
-        for x_paras in self.model.parameters():
-            x_paras.data.mul_(topology[self.client_id])
-
-        for client_id in self.received_model_dict.keys():
-            neighbor_model = self.received_model_dict[client_id]
-            topo_weight = self.received_topology_weight_dict[client_id]
-            for x_paras, x_neighbor in zip(list(self.model.parameters()), list(neighbor_model.parameters())):
-                temp = x_neighbor.data.mul(topo_weight)
-                x_paras.data.add_(temp)
 
     # 直接用平均
     def model_average_update(self):
@@ -231,37 +213,18 @@ class Client(object):
                 self.state_dict[key1].add_(temp)
 
     # 权重插值
-    def weighted_model_interpolation_update3(self):
-        local_weight = self.cache_keeper.mutual_update_weight3[self.client_id]
-        total_weight = local_weight
-
-        # todo 应该记录model param的副本，最后再一块更新上去
-        # print(self.model.state_dict())
+    def weighted_model_interpolation_update(self):
+        local_weight = self.cache_keeper.mutual_update_weight[self.client_id]
         self.state_dict = copy.deepcopy(self.model.state_dict())
-
         for key in self.state_dict:
-            # print(type(self.state_dict[key]))
             self.state_dict[key].mul_(local_weight)
 
         for neighbor_id in self.received_model_dict.keys():
             neighbor_model = self.received_model_dict[neighbor_id]
-            neighbor_weight = self.cache_keeper.mutual_update_weight3[neighbor_id]
+            neighbor_weight = self.cache_keeper.mutual_update_weight[neighbor_id]
             for key1, key2 in zip(self.state_dict, neighbor_model.state_dict()):
                 temp = neighbor_model.state_dict()[key2].data.mul(neighbor_weight)
                 self.state_dict[key1].add_(temp)
-            total_weight += neighbor_weight
-
-
-    def select_topK(self):
-        topK = self.topK_selector.select(self)
-        if topK is None:
-            return
-        # self.topK = topK
-        self.topK_neighbor = {}
-        # todo 改这里
-        for c_id, loss in topK:
-            self.topK_neighbor[c_id] = self.received_model_dict[c_id]
-        # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))
 
     # 广播模块
     def broadcast(self):
@@ -271,3 +234,12 @@ class Client(object):
     def response(self, sender_id):
         # logging.info("client[{:d}]:收到来自client[{:d}]的广播".format(self.client_id, sender_id))
         pass
+
+    # def select_topK(self):
+    #     topK = self.topK_selector.select(self)
+    #     if topK is None:
+    #         return
+    #     self.topK_neighbor = {}
+    #     for c_id, loss in topK:
+    #         self.topK_neighbor[c_id] = self.received_model_dict[c_id]
+    #     # print("client {} 本轮topK选择了{}个模型".format(self.client_id, len(self.received_model_dict)))

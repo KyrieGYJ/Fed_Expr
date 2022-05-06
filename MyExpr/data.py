@@ -173,7 +173,7 @@ class Data(object):
         elif args.data_distribution == "non-iid_latent":
             self.generate_loader = self.non_iid_latent
         elif args.data_distribution == "non-iid_latent2":
-            self.generate_loader = self.non_iid_latent_decrapted
+            self.generate_loader = self.non_iid_latent2
 
         print(f"use dataset: {self.args.dataset}")
 
@@ -200,7 +200,6 @@ class Data(object):
             self.test_non_iid.append(
                 DataLoader(class_test_dataset[i], batch_size=args.batch_size, shuffle=True,
                            num_workers=args.num_workers))
-
 
         # 统计每个类分别被哪些client持有
         for ix in dict_users_train:
@@ -474,184 +473,7 @@ class Data(object):
              for ix in range(args.client_num_in_total)], axis=0)
         print(f'> Global mean EMD: {average_emd}')
 
-    def non_iid_latent_decrapted(self):
-        # args = self.args
-        #
-        # self.precomputed_root = "./../data/precomputed"
-        # self.embedding_fname = 'embeddings-d=cifar10-e=4-st=5-lr=0.001-mo=0.9-wd=0.0001-fc2-train.npy'
-        # self.train_embedding_fname = self.embedding_fname
-        # self.test_embedding_fname = 'embeddings-d=cifar10-e=4-st=5-lr=0.001-mo=0.9-wd=0.0001-fc2-test.npy'
-        # kmeans_labels_prefix = f'kmeans-nd={args.num_distributions}-s={args.seed}-ds={args.data_seed}'
-        # self.kmeans_train_fname = f'{kmeans_labels_prefix}-{self.embedding_fname}'
-        # self.kmeans_test_fname = f'{kmeans_labels_prefix}-{self.test_embedding_fname}'
-        #
-        # """
-        # 参考FedFomo
-        # Initialize client data distributions with through latent non-IID method
-        # - Groups datapoints into D groupings based on clustering their
-        #   hidden-layer representations from a pre-trained model
-        # """
-        # # init_distribution
-        # dict_data = {'inputs': np.array(self.train_data.data),
-        #              'targets': np.array(self.train_data.targets),
-        #              'test_inputs': np.array(self.test_data.data),
-        #              'test_targets': np.array(self.test_data.targets)}
-        #
-        # # 先计算VGG在这个数据集上的训练后的，倒数第二个隐藏层输出作为model embedding，随后根据emb edding聚类
-        # # 如果已有计算好的embedding，直接读取
-        # try:
-        #     path = join(self.precomputed_root, self.train_embedding_fname)
-        #     print(f'> Loading training embeddings from {path}...')
-        #     with open(path, 'rb') as f:
-        #         train_embeddings = np.load(f)
-        #         dict_data['train_embeddings'] = train_embeddings
-        #
-        #     path = join(self.precomputed_root, self.test_embedding_fname)
-        #     print(f'> Loading test embeddings from {path}...')
-        #     with open(path, 'rb') as f:
-        #         dict_data['test_embeddings'] = np.load(f)
-        # except FileNotFoundError:
-        #     print(f'>> Embedding path not found. Calculating new embeddings...')
-        #     # setup_train_data = torchvision.datasets.CIFAR10(root=self.dataset_root, train=True, download=False, transform=self.setup_transform)
-        #     # setup_test_data = torchvision.datasets.CIFAR10(root=self.dataset_root, train=False, download=False, transform=self.setup_test_transform)
-        #     setup_train_data = self.train_data
-        #     setup_test_data = self.test_data
-        #
-        #     all_embeddings = get_embeddings(setup_train_data,
-        #                                     setup_test_data,
-        #                                     num_epochs=5,  # 10,
-        #                                     args=args,
-        #                                     stopping_threshold=5)
-        #
-        #     train_embeddings, test_embeddings = all_embeddings
-        #     dict_data['train_embeddings'] = train_embeddings
-        #     dict_data['test_embeddings'] = test_embeddings
-        #
-        # print(f"Train embedding shape: {dict_data['train_embeddings'].shape}")
-        # print(f"Test embedding shape: {dict_data['test_embeddings'].shape}")
-        #
-        # if args.num_distributions == 10:
-        #     dist_labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        #     kmeans_labels = np.array([dist_labels[t] for t in dict_data['targets']])
-        #     kmeans_labels_test = np.array([dist_labels[t] for t in dict_data['test_targets']])
-        # else:
-        #     # 如果是随机分布，即iid分布
-        #     # if self.random_dists:
-        #     #     print('> Random dataset distribution initialization...')
-        #     #     kmeans_labels = np.random.randint(self.num_distributions, size=len(dict_data['inputs']))
-        #     #     kmeans_labels_test = np.random.randint(self.num_distributions, size=len(dict_data['test_inputs']))
-        #     #
-        #     # else:
-        #     try:  # First see if kmeans labels were already computed, and load those
-        #         path = join(self.precomputed_root, self.kmeans_train_fname)
-        #         with open(path, 'rb') as f:
-        #             kmeans_labels = np.load(path)
-        #         path = join(self.precomputed_root, self.kmeans_test_fname)
-        #         print(f'> Loaded clustered labels from {path}!')
-        #         with open(path, 'rb') as f:
-        #             kmeans_labels_test = np.load(path)
-        #         print(f'> Loaded clustered labels from {path}!')
-        #     except FileNotFoundError:
-        #         # Compute PCA first on combined train and test embeddings
-        #         embeddings = np.concatenate([dict_data['train_embeddings'],
-        #                                      dict_data['test_embeddings']])
-        #         np.random.seed(args.data_seed)
-        #         num_components = 256
-        #         pca = PCA(n_components=num_components)
-        #         dict_data['embeddings'] = pca.fit_transform(embeddings)
-        #         print_debug(pca.explained_variance_ratio_.cumsum()[-1],
-        #                     f'Ratio of embedding variance explained by {num_components} principal components')
-        #
-        #         # Compute clusters
-        #         np.random.seed(args.data_seed)
-        #         km = KMeans(n_clusters=self.args.num_distributions,
-        #                     init='k-means++', max_iter=100, n_init=5)
-        #
-        #         # # For random distributions, specify km.labels_ randomly across the number of distributions
-        #         # if self.random_dists:
-        #         #     km.labels_ = np.random.randint(self.num_distributions,
-        #         #                                    size=len(embeddings))
-        #         #     print_debug(len(dict_data['inputs']), 'Size of dataset')
-        #         # else:
-        #         #     km.fit(dict_data['embeddings'])
-        #         km.fit(dict_data['embeddings'])
-        #
-        #         kmeans_labels_train_test = km.labels_
-        #
-        #         # Partition into train and test
-        #         kmeans_labels = kmeans_labels_train_test[:len(self.train_data.targets)]
-        #         kmeans_labels_test = kmeans_labels_train_test[len(self.train_data.targets):]
-        #
-        #         assert len(kmeans_labels) == len(dict_data['inputs'])
-        #         print_debug(len(kmeans_labels_test), 'len(kmeans_labels_test)')
-        #         print_debug(len(dict_data['test_inputs']), "len(dict_data['test_inputs'])")
-        #         assert len(kmeans_labels_test) == len(dict_data['test_inputs'])
-        #
-        #         path = join(self.precomputed_root, self.kmeans_train_fname)
-        #         with open(path, 'wb') as f:
-        #             np.save(f, kmeans_labels)
-        #         print(f'> Saved clustered labels to {path}!')
-        #
-        #         path = join(self.precomputed_root, self.kmeans_test_fname)
-        #         with open(path, 'wb') as f:
-        #             np.save(f, kmeans_labels_test)
-        #         print(f'> Saved clustered labels to {path}!')
-        #
-        # loaded_images = dict_data['inputs']
-        # loaded_labels = dict_data['targets']
-        #
-        # loaded_images_test = dict_data['test_inputs']
-        # loaded_labels_test = dict_data['test_targets']
-        #
-        # distributions = []
-        # distributions_fname = 'distributions.npy'
-        # try:
-        #     print("load precomputed distribution from disk")
-        #     distributions = np.load(f"{self.precomputed_root}/{distributions_fname}")
-        # except FileNotFoundError:
-        #     # 将聚类好的每个distribution的数据载入字典images_dist，labels_dist，放入distributions[i]
-        #     print("no precomputed file was found, newly compute distribution")
-        #     for cluster_label in range(self.args.num_distributions):
-        #         indices = np.where(kmeans_labels == cluster_label)[0]
-        #         images_dist = loaded_images[indices]
-        #         labels_dist = loaded_labels[indices]
-        #
-        #         if self.shuffle:
-        #             np.random.seed(args.data_seed)
-        #             shuffle_ix = list(range(images_dist.shape[0]))
-        #             np.random.shuffle(shuffle_ix)
-        #             images_dist = images_dist[shuffle_ix]
-        #             labels_dist = labels_dist[shuffle_ix]
-        #             indices = indices[shuffle_ix]
-        #
-        #         test_indices = np.where(kmeans_labels_test == cluster_label)[0]
-        #         test_images_dist = loaded_images_test[test_indices]
-        #         test_labels_dist = loaded_labels_test[test_indices]
-        #
-        #         if self.shuffle:
-        #             np.random.seed(args.data_seed)
-        #             shuffle_ix = list(range(test_images_dist.shape[0]))
-        #             np.random.shuffle(shuffle_ix)
-        #             test_images_dist = test_images_dist[shuffle_ix]
-        #             test_labels_dist = test_labels_dist[shuffle_ix]
-        #             test_indices = test_indices[shuffle_ix]
-        #
-        #         test_loader = DataLoader(torch.utils.data.Subset(self.test_data, indices=test_indices), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-        #
-        #         # Should be good if the embeddings were calculated in order
-        #         distributions.append({'images': images_dist,
-        #                               'labels': labels_dist,
-        #                               # 'clients': [],
-        #                               'clients_data': [],
-        #                               'id': cluster_label,
-        #                               'indices': indices,
-        #                               'test_loader': test_loader,
-        #                               'test_labels': test_labels_dist,
-        #                               'test_indices': test_indices})
-        #     np.save(f"{self.precomputed_root}/{distributions_fname}", distributions)
-        # self.init_clients_data(distributions)
-        # self.distributions = distributions
-
+    def non_iid_latent2(self):
         self.distributions = []
         self.init_distributions(True)
         distributions = self.distributions

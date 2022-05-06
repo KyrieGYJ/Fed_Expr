@@ -22,8 +22,17 @@ def add_args():
     parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
 
-    parser.add_argument('--client_optimizer', type=str, default='adam',
+    parser.add_argument('--client_optimizer', type=str, default='sgd',
                         help='SGD with momentum; adam')
+
+    parser.add_argument(
+        "--lr_scheduler",
+        help='learning rate decay scheme to be used;'
+             ' possible are "sqrt", "linear", "cosine_annealing", "multi_step" and "constant" (no learning rate decay);'
+             'default is "constant"',
+        type=str,
+        default="constant"
+    )
 
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.001)')

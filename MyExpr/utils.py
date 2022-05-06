@@ -138,7 +138,6 @@ def calc_eval_speed_up_using_cache(cache_keeper):
                 loss_dict[c_id] += received_loss.cpu().item()
                 acc_dict[c_id] += correct.cpu()
 
-
     # 用memory填充未接收到的部分
     for i in range(args.client_num_in_total):
         if i not in new_model_dict and i in known_set:
