@@ -54,14 +54,14 @@ def get_optimizer(optimizer_name, model, lr_initial):
         return optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=lr_initial,
-            weight_decay=5e-4
+            weight_decay=0.001
         )
 
     elif optimizer_name == "sgd":
         return optim.SGD(
             filter(lambda p: p.requires_grad, model.parameters()),
             lr=lr_initial,
-            momentum=0.9,
+            # momentum=0.9,
             weight_decay=5e-4
         )
 

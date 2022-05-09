@@ -4,7 +4,7 @@ import argparse
 def add_args():
     parser = argparse.ArgumentParser(description='DFL-Mutual-standalone')
     # Training settings
-    parser.add_argument('--model', type=str, default='resnet18', metavar='N',
+    parser.add_argument('--model', type=str, default='TFConvNet', metavar='N',
                         help='neural network used in training')
 
     parser.add_argument('--dataset', type=str, default='cifar10', metavar='N',

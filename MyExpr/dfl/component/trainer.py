@@ -54,6 +54,8 @@ class Trainer(object):
         else:
             self.non_iid_test = self.non_iid_test_pass
 
+        self.history = np.zeros(shape=(self.args.comm_round, 4))
+
     def register_recorder(self, recorder):
         self.recorder = recorder
         self.client_dict = recorder.client_dict
@@ -78,7 +80,6 @@ class Trainer(object):
             self.train = self.weighted_model_interpolation
         elif strategy == "model_average":
             self.train = self.model_average
-
 
     ###################
     # 基础方法(批量操作) #
@@ -113,7 +114,7 @@ class Trainer(object):
     def local(self, turn_on_wandb=True):
         rounds = self.recorder.rounds
         # print("-----开始本地训练-----")
-        total_loss, total_correct = 0.0, 0.0
+        total_train_loss, total_correct = 0.0, 0.0
         total_epsilon, total_alpha = 0.0, 0.0
         total_num = 0
         for c_id in tqdm(self.client_dict, desc="local train"):
@@ -123,7 +124,7 @@ class Trainer(object):
                 total_alpha += alpha
             else:
                 loss, correct = self.client_dict[c_id].local_train()
-            total_loss += loss
+            total_train_loss += loss
             total_correct += correct
             total_num += len(self.client_dict[c_id].train_set)
         # print("-----本地训练结束-----")
@@ -136,11 +137,15 @@ class Trainer(object):
             print(f"avg_local_train_epsilon:{avg_local_train_epsilon}, avg_local_train_alpha:{avg_local_train_alpha}")
 
         print("local_train_loss:{}, local_train_acc:{}".
-              format(total_loss, local_train_acc))
+              format(total_train_loss, local_train_acc))
+        # self.history[self.recorder.rounds][0] = total_train_loss
+        # self.history[self.recorder.rounds][1] = local_train_acc
+        self.recorder.record_global_history("train_loss", total_train_loss)
+        self.recorder.record_global_history("train_acc", local_train_acc)
 
         # print("-----上传至wandb-----")
         if self.args.turn_on_wandb and turn_on_wandb:
-            wandb.log(step=rounds, data={"local_train/loss": total_loss, "local_train/acc": local_train_acc})
+            wandb.log(step=rounds, data={"local_train/loss": total_train_loss, "local_train/acc": local_train_acc})
             if self.args.enable_dp:
                 wandb.log(step=rounds, data={"avg_local_train_epsilon": avg_local_train_epsilon, "avg_local_train_alpha":avg_local_train_alpha})
 
@@ -242,26 +247,32 @@ class Trainer(object):
     # test local per epoch
     def local_test(self):
         rounds = self.recorder.rounds
-        total_loss, total_correct = 0., 0.
+        total_test_loss, total_correct = 0., 0.
         total_num = 0
 
         for c_id in tqdm(self.client_dict, desc="local_test"):
             client = self.client_dict[c_id]
             loss, correct = client.local_test()
-            total_loss += loss
+            total_test_loss += loss
             total_correct += correct
             # print("client {} contains {} test data".format(c_id, len(client.test_loader)))
             total_num += len(client.test_set)
 
-        avg_acc = total_correct / total_num
-        print("local_test_loss:{}, avg_local_test_acc:{}".format(total_loss, avg_acc))
+        test_acc = total_correct / total_num
+        print("local_test_loss:{}, avg_local_test_acc:{}".format(total_test_loss, test_acc))
+        # self.history[self.recorder.rounds][2] = total_test_loss
+        # self.history[self.recorder.rounds][3] = test_acc
+        self.recorder.record_global_history("test_loss", total_test_loss)
+        self.recorder.record_global_history("test_acc", test_acc)
 
         # print("-----上传至wandb-----")
         if self.args.turn_on_wandb:
-            wandb.log(step=rounds, data={"local_test/loss": total_loss, "local_test/avg_acc": avg_acc})
-            if avg_acc > self.best_accuracy:
-                wandb.run.summary["best_accuracy"] = avg_acc
-                self.best_accuracy = avg_acc
+            wandb.log(step=rounds, data={"local_test/loss": total_test_loss, "local_test/avg_acc": test_acc})
+            if test_acc > self.best_accuracy:
+                wandb.run.summary["best_accuracy"] = test_acc
+                # self.best_accuracy = test_acc
+        if test_acc > self.best_accuracy:
+            self.recorder.history.best_accuracy = test_acc
 
     def non_iid_test_latent(self):
         rounds = self.recorder.rounds

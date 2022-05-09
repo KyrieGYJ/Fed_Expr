@@ -22,8 +22,8 @@ class Client(object):
         validation_loader = data.validation_loader[client_id] if client_id < total_benign_num else None
         test_loader = data.test_loader[client_id] if client_id < total_benign_num else None
 
-        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
-        # optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd)
+        # optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
+        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd)
         # optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=args.wd, amsgrad=True)
 
         # differential privacy
@@ -63,6 +63,7 @@ class Client(object):
         self.recorder = recorder
         self.broadcaster = broadcaster
         self.cache_keeper = keeper(self)
+        self.response_hook = None
 
         ########################################
         # cache of current communication round #
@@ -226,6 +227,8 @@ class Client(object):
                 temp = neighbor_model.state_dict()[key2].data.mul(neighbor_weight)
                 self.state_dict[key1].add_(temp)
 
+    #
+
     # 广播模块
     def broadcast(self):
         self.broadcaster.send(self.client_id, self.model)
@@ -233,7 +236,12 @@ class Client(object):
     # 收到广播的回应，主要用来debug
     def response(self, sender_id):
         # logging.info("client[{:d}]:收到来自client[{:d}]的广播".format(self.client_id, sender_id))
+        if self.response_hook != None:
+            self.response_hook(self, sender_id)
         pass
+
+    def register_response_hook(self, method):
+        self.response_hook = method
 
     # def select_topK(self):
     #     topK = self.topK_selector.select(self)

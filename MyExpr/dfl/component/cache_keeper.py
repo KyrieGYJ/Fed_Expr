@@ -17,6 +17,9 @@ class keeper(object):
         self.logger = logger(self, "cache_keeper")
         self.log_condition = self.host.client_id == 35 and False
 
+        self.weight_moniter = True
+        self.client_broadcast_weight_history = np.zeros(shape=(self.args.comm_round, self.args.client_num_in_total))
+
         # 接收缓存
         self.topology_weight_memory = {}
 
@@ -32,7 +35,7 @@ class keeper(object):
 
         self.sigma = 0.1  # 防止model_dif最大的delta loss丢失
         self.epsilon = 1e-9
-        self.chance = 0.5 # 有概率不聚合邻居权重，缓解"群盲"问题
+        self.chance = 0.5  # 有概率不聚合邻居权重，缓解"群盲"问题
         self.rand_num = 0.
 
         # local_train前的模型缓存
@@ -193,7 +196,7 @@ class keeper(object):
         # (2) 会有群盲问题，即当大家认为某个模型垃圾时，实际上它不垃圾，聚合完了以后的权值也会变成认为它垃圾。
         # -> 加入随机数，有概率不聚合，已经能缓解了
         self.rand_num = np.random.rand()
-        if self.rand_num >= self.chance:
+        if self.rand_num < self.chance:
             self.logger.log_with_name(
                 f"client{self.host.client_id} rand_num[{self.rand_num}] >= chance[{self.chance}], don't aggregate broadcast_weight",
                 self.log_condition)
@@ -244,6 +247,10 @@ class keeper(object):
             self.p += (1 - r) * aggregated_received_broadcast_weight
         self.logger.log_with_name(f"[id:{self.host.client_id}]: affinity:{self.p}",
                                   self.log_condition)
+
+        if self.weight_moniter:
+            # self.client_broadcast_weight_history[self.recorder.rounds] = copy.deepcopy(self.p)
+            self.recorder.record_client_history(self.host.client_id, "broadcast_weight_history", copy.deepcopy(self.p))
 
         # todo future-work 不能直接聚合，要先剔除恶意值
         self.last_aggregate_broadcast_weight = aggregated_received_broadcast_weight

@@ -74,6 +74,7 @@ class Broadcaster(object):
         client_indexes.sort()
         self.logger.log_with_name(f"client [{sender_id}] random send to {client_indexes}", self.log_condition(sender_id))
 
+        # malignant_node broadcast default value
         if sender_id < self.args.client_num_in_total - self.args.malignant_num:
             for receiver_id in client_indexes:
                 self.receive_from_neighbors(sender_id, model, receiver_id, topology[receiver_id], client_dic[sender_id].cache_keeper.broadcast_weight)
@@ -213,7 +214,7 @@ class Broadcaster(object):
         # 调用receiver的方法，显示收到了某个client的数据。。（相当于钩子函数）
         receiver.response(sender_id)
         if model is not None:
-            receiver.received_model_dict[sender_id] = model
+            receiver.received_model_dict[sender_id] = model # shallow copy
         if topology_weight is not None:
             receiver.received_topology_weight_dict[sender_id] = topology_weight
         if w is not None:

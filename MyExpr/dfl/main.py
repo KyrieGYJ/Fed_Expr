@@ -1,3 +1,4 @@
+import copy
 import logging
 import torch
 from tqdm import tqdm
@@ -5,6 +6,7 @@ import wandb
 import os
 import sys
 import time
+import matplotlib.pyplot as plt
 
 # 添加环境
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../MyExpr")))
@@ -55,8 +57,6 @@ def initialize(args):
         trainer = pFedMeServer(args)
     elif args.trainer_strategy == "apfl":
         trainer = APFLServer(args)
-    elif args.trainer_strategy == "fedem":
-        trainer = FedEMServer(args)
     else:
         trainer = Trainer(args)
     broadcaster = Broadcaster(args)
@@ -138,6 +138,7 @@ def main(turn_on_wandb=True):
     ###############################
     # 1 communication per E epoch #
     ###############################
+    # broadcaster.get_freq_heatmap(f"./heatmap/{project_name}/{name}/freq_start")
     total_start = time.time()
     for rounds in range(args.comm_round):
         start = time.time()
@@ -147,9 +148,27 @@ def main(turn_on_wandb=True):
         # 在本地数据集上测试
         trainer.local_test()
         # 打印通信频率热力图
-        broadcaster.get_freq_heatmap(f"./heatmap/{project_name}/{name}/freq_{rounds}")
+        recorder.record_global_history("broadcast_freq", copy.deepcopy(broadcaster.broadcast_freq))
+        # broadcaster.get_freq_heatmap(f"./heatmap/{project_name}/{name}/freq_{rounds}")
         end = time.time()
         print(f"-----第{rounds}轮训练结束, 耗时:{end - start}s-----")
+
+    # save history
+    if not os.path.exists(f'./BKW/{project_name}/{name}'):
+        os.makedirs(f'./BKW/{project_name}/{name}')
+    torch.save(recorder.history, f"./BKW/{project_name}/{name}/history")
+        # torch.save(trainer.history, f"./BKW/{project_name}/{name}/history")
+        # torch.save(trainer.best_accuracy, f"./BKW/{project_name}/{name}/best_acc")
+
+    # save client_weight
+    # weight_moniter = True
+    # if weight_moniter:
+    #     weight_history_dict = {}
+    #     for i in client_dict:
+    #         if client_dict[i].cache_keeper.weight_moniter:
+    #             bkw = client_dict[i].cache_keeper.client_broadcast_weight_history
+    #             weight_history_dict[i] = bkw
+    #     torch.save(weight_history_dict, f"./BKW/{project_name}/{name}/weight_dict")
 
     # save_model
     fname = f"{args.model}_c{args.client_num_in_total}" \
@@ -170,7 +189,7 @@ def main(turn_on_wandb=True):
 
 if __name__ == '__main__':
     test_shell = False
-    turn_on_wandb = False
+    turn_on_wandb = True
     if test_shell:
         print("测试shell脚本")
     else:

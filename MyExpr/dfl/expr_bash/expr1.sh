@@ -5,6 +5,8 @@
 #- dataset=mnist, cifar10
 #- K = 0.1, 0.3, 0.5
 # client_num = 20
+
+
 bash run_expr.sh "TFConvNet" "cuda:2" "local" "random" 1 20 0.1 "non-iid_pathological" \
 500 0.2 2 0.1 0 0 "exp1"
 
@@ -21,12 +23,10 @@ bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_
 bash run_expr.sh "TFConvNet" "cuda:2" "local" "random" 1 100 0.1 "non-iid_pathological" \
 500 0.2 2 0.1 0 0 "exp1"
 
-bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
+bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 3 100 0.1 "non-iid_pathological" \
 500 0.1 2 0.1 0 0 "exp1"
-
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
 500 0.3 2 0.1 0 0 "exp1"
-
 bash run_expr.sh "TFConvNet" "cuda:2" "weighted_model_interpolation3" "affinity_topK" 1 100 0.1 "non-iid_pathological" \
 500 0.5 2 0.1 0 0 "exp1"
 

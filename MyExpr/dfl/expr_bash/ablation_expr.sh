@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 消融实验（1），分别测试wmi和at的效果
+
 # 可以继续追加在不同分布数量上时的效果
-# todo 有可能要调大local train的epoch，减少communication round
+# todo 有可能要调大local train的epoch，减少communication round(效果会更好一点，而且优化器得换)
+# BK={0.2, 0.3, 0.4, 0.5}
 # BK=0.5
 bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "random" 1 60 0.1 "non-iid_latent2" \
 1200 0.5 2 0.1 0 0 "ablation_expr"
@@ -38,11 +40,27 @@ bash run_expr.sh "TFConvNet" "cuda:3" "model_average" "affinity_topK" 1 60 0.1 "
 1200 0.1 2 0.1 0 0 "ablation_expr"
 bash run_expr.sh "TFConvNet" "cuda:3" "model_average" "random" 1 60 0.1 "non-iid_latent2" \
 1200 0.1 2 0.1 0 0 "ablation_expr"
+
+# ours
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+1200 0.5 2 0.1 0 0 "ablation_expr"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+1200 0.3 2 0.1 0 0 "ablation_expr"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 1 60 0.1 "non-iid_latent2" \
+1200 0.1 2 0.1 0 0 "ablation_expr"
+
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 5 60 0.1 "non-iid_latent2" \
+200 0.5 2 0.1 0 0 "ablation_expr_localepoch5"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 5 60 0.1 "non-iid_latent2" \
+200 0.3 2 0.1 0 0 "ablation_expr_localepoch5"
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 5 60 0.1 "non-iid_latent2" \
+200 0.1 2 0.1 0 0 "ablation_expr_localepoch5"
 # 消融实验（2）探索r1，r2，chance的关系
 # r1=(0.1 0.3 0.5)
 
-arr=(1 2 3)
-for i in ${arr[@]}
-do
-
-done
+bash run_expr.sh "TFConvNet" "cuda:3" "weighted_model_interpolation3" "affinity_topK" 5 60 0.1 "non-iid_latent2" \
+200 0.5 2 0.1 0 0 "ablation_expr_localepoch5_wd"
+bash run_expr.sh "TFConvNet" "cuda:2" "model_average" "affinity_topK" 5 60 0.1 "non-iid_latent2" \
+200 0.1 2 0.1 0 0 "ablation_expr_localepoch5"
+bash run_expr.sh "TFConvNet" "cuda:2" "model_average" "affinity_topK" 5 60 0.1 "non-iid_latent2" \
+200 0.1 2 0.1 0 0 "ablation_expr_localepoch5_wd"
