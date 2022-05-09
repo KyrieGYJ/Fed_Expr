@@ -9,7 +9,7 @@ import torch.nn as nn
 
 from MyExpr.dfl.model.model_builder import get_model_builder, get_optimizer, get_lr_scheduler
 
-# shit
+# todo bugged
 class FedEMServer(object):
     # server as trainer
     def __init__(self, args):

@@ -16,6 +16,7 @@ class FedAvgServer(object):
         self.args = args
         self.recorder = None
         self.client_dict = None
+        self.best_accuracy = 0.
 
     def register_recorder(self, recorder):
         self.recorder = recorder
@@ -89,6 +90,9 @@ class FedAvgServer(object):
         tqdm.write("local_train_loss:{}, local_train_acc:{}".
               format(total_loss, local_train_acc))
 
+        self.recorder.record_global_history("train_loss", total_loss)
+        self.recorder.record_global_history("train_acc", local_train_acc)
+
         # print("-----上传至wandb-----")
         if self.args.turn_on_wandb and turn_on_wandb:
             wandb.log(step=rounds, data={"local_train/loss": total_loss, "local_train/acc": local_train_acc})
@@ -144,7 +148,9 @@ class FedAvgServer(object):
             total_num += len(client.test_set)
 
         avg_acc = total_correct / total_num
-        print("local_test_loss:{}, avg_local_test_acc:{}".format(total_loss, avg_acc))
+        print(f"local_test_loss:{total_loss}, avg_local_test_acc:{avg_acc}")
+        self.recorder.record_global_history("test_loss", total_loss)
+        self.recorder.record_global_history("test_acc", avg_acc)
 
         # print("-----上传至wandb-----")
         if self.args.turn_on_wandb:
@@ -152,4 +158,6 @@ class FedAvgServer(object):
             if avg_acc > self.best_accuracy:
                 wandb.run.summary["best_accuracy"] = avg_acc
                 self.best_accuracy = avg_acc
+        if avg_acc > self.best_accuracy:
+            self.recorder.history.best_accuracy = avg_acc
 
